@@ -54,5 +54,27 @@
     "bio": "Someone",
     "createdAt": "2025-12-21T10:53:22.303Z",
     "avatarImage": "/images/avatar_805bb207-48b8-4824-8f92-1b530b068298_1766325305020.jpeg"
+  },
+  {
+    "id": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "name": "Maryam 2",
+    "email": "maryam2@gmail.com",
+    "password": "12345678",
+    "initials": "M2",
+    "avatarColor": "#3b82f6",
+    "role": "Member",
+    "bio": "",
+    "createdAt": "2025-12-21T15:57:03.841Z"
+  },
+  {
+    "id": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "name": "Alyaa Gamal",
+    "email": "alyaa@gmail.com",
+    "password": "12345678",
+    "initials": "AG",
+    "avatarColor": "#f59e0b",
+    "role": "Member",
+    "bio": "",
+    "createdAt": "2025-12-21T16:13:24.033Z"
   }
 ]

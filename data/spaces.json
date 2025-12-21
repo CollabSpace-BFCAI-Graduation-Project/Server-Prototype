@@ -135,5 +135,18 @@
     "userCount": 0,
     "memberCount": 1,
     "isOnline": false
+  },
+  {
+    "id": "e9fdfb43-67e6-41ed-85f6-c2e1356c041b",
+    "name": "Test invite",
+    "thumbnail": "linear-gradient(135deg, #e6b980 0%, #eacda3 100%)",
+    "type": "MEETING",
+    "category": "MEETING",
+    "description": "invite",
+    "ownerId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "createdAt": "2025-12-21T15:57:22.429Z",
+    "userCount": 0,
+    "memberCount": 1,
+    "isOnline": false
   }
 ]

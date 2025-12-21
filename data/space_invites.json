@@ -1,0 +1,24 @@
+[
+  {
+    "id": "0a4c9fe2-47c6-4044-b911-c132c8e48684",
+    "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
+    "spaceName": "test",
+    "userId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "inviterId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "inviterName": "Maryam Tarek",
+    "status": "accepted",
+    "createdAt": "2025-12-21T16:10:16.985Z",
+    "respondedAt": "2025-12-21T16:10:46.530Z"
+  },
+  {
+    "id": "cbf8d2a7-ffa7-4eda-ae37-9ec5d6c8b4e4",
+    "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
+    "spaceName": "test",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "inviterId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "inviterName": "Maryam Tarek",
+    "status": "accepted",
+    "createdAt": "2025-12-21T16:14:19.705Z",
+    "respondedAt": "2025-12-21T16:14:59.436Z"
+  }
+]

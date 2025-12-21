@@ -1,47 +1,109 @@
 [
-    {
-        "id": "notif-1",
-        "userId": "user-1",
-        "type": "mention",
-        "author": "Sarah Chen",
-        "text": "mentioned you in",
-        "target": "Design Weekly",
-        "time": "10 mins ago",
-        "read": false,
-        "createdAt": "2024-12-21T09:00:00.000Z"
-    },
-    {
-        "id": "notif-2",
-        "userId": "user-1",
-        "type": "session",
-        "author": "Tom Wilson",
-        "text": "started a session in",
-        "target": "Project Alpha",
-        "action": "Join Session",
-        "time": "1 hour ago",
-        "read": false,
-        "createdAt": "2024-12-21T08:00:00.000Z"
-    },
-    {
-        "id": "notif-3",
-        "userId": "user-1",
-        "type": "file",
-        "author": "Mike Ross",
-        "text": "uploaded",
-        "target": "Specs_v2.pdf",
-        "time": "2 hours ago",
-        "read": true,
-        "createdAt": "2024-12-21T07:00:00.000Z"
-    },
-    {
-        "id": "notif-4",
-        "userId": "user-1",
-        "type": "invite",
-        "author": "System",
-        "text": "You were added to",
-        "target": "Town Hall",
-        "time": "1 day ago",
-        "read": true,
-        "createdAt": "2024-12-20T09:00:00.000Z"
-    }
+  {
+    "id": "e1351fea-01d9-4016-926e-302f07f450a7",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Alyaa Gamal",
+    "text": "accepted your invite to join",
+    "target": "test",
+    "read": false,
+    "time": "Just now",
+    "createdAt": "2025-12-21T16:14:59.436Z"
+  },
+  {
+    "id": "d07eb19c-0f84-4a34-aef7-ee9b6ba46cd9",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "type": "invite",
+    "author": "Maryam Tarek",
+    "text": "invited you to join",
+    "target": "test",
+    "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
+    "inviteId": "cbf8d2a7-ffa7-4eda-ae37-9ec5d6c8b4e4",
+    "action": "View Invite",
+    "read": false,
+    "time": "Just now",
+    "createdAt": "2025-12-21T16:14:19.705Z"
+  },
+  {
+    "id": "2c5cadb7-1e19-4784-a163-e4fe0ebb71e7",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Maryam 2",
+    "text": "accepted your invite to join",
+    "target": "test",
+    "read": false,
+    "time": "Just now",
+    "createdAt": "2025-12-21T16:10:46.531Z"
+  },
+  {
+    "id": "793213d0-73cb-421e-9239-4b5fd3aaaf15",
+    "userId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "type": "invite",
+    "author": "Maryam Tarek",
+    "text": "invited you to join",
+    "target": "test",
+    "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
+    "inviteId": "0a4c9fe2-47c6-4044-b911-c132c8e48684",
+    "action": "View Invite",
+    "read": false,
+    "time": "Just now",
+    "createdAt": "2025-12-21T16:10:16.985Z"
+  },
+  {
+    "id": "85abb7fd-9a9d-4345-9dce-832e35b2e933",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "invite",
+    "author": "Maryam 2",
+    "text": "invited you to join",
+    "target": "Test invite",
+    "spaceId": "e9fdfb43-67e6-41ed-85f6-c2e1356c041b",
+    "read": false,
+    "time": "Just now",
+    "createdAt": "2025-12-21T15:57:30.238Z"
+  },
+  {
+    "id": "notif-1",
+    "userId": "user-1",
+    "type": "mention",
+    "author": "Sarah Chen",
+    "text": "mentioned you in",
+    "target": "Design Weekly",
+    "time": "10 mins ago",
+    "read": false,
+    "createdAt": "2024-12-21T09:00:00.000Z"
+  },
+  {
+    "id": "notif-2",
+    "userId": "user-1",
+    "type": "session",
+    "author": "Tom Wilson",
+    "text": "started a session in",
+    "target": "Project Alpha",
+    "action": "Join Session",
+    "time": "1 hour ago",
+    "read": false,
+    "createdAt": "2024-12-21T08:00:00.000Z"
+  },
+  {
+    "id": "notif-3",
+    "userId": "user-1",
+    "type": "file",
+    "author": "Mike Ross",
+    "text": "uploaded",
+    "target": "Specs_v2.pdf",
+    "time": "2 hours ago",
+    "read": true,
+    "createdAt": "2024-12-21T07:00:00.000Z"
+  },
+  {
+    "id": "notif-4",
+    "userId": "user-1",
+    "type": "invite",
+    "author": "System",
+    "text": "You were added to",
+    "target": "Town Hall",
+    "time": "1 day ago",
+    "read": true,
+    "createdAt": "2024-12-20T09:00:00.000Z"
+  }
 ]

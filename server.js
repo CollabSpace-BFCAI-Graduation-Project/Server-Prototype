@@ -380,9 +380,9 @@ app.delete('/api/spaces/:spaceId/members/:memberId', (req, res) => {
     res.json({ success: true });
 });
 
-// Invite members by email
+// Invite members by email (creates pending invite)
 app.post('/api/spaces/:spaceId/invite', (req, res) => {
-    const { emails } = req.body;
+    const { emails, inviterName, inviterId } = req.body;
 
     if (!emails || !Array.isArray(emails)) {
         return res.status(400).json({ error: 'emails array is required' });
@@ -390,31 +390,147 @@ app.post('/api/spaces/:spaceId/invite', (req, res) => {
 
     const users = readData('users.json');
     const members = readData('space_members.json');
-    const addedMembers = [];
+    const invites = readData('space_invites.json');
+    const spaces = readData('spaces.json');
+    const notifications = readData('notifications.json');
+
+    const space = spaces.find(s => s.id === req.params.spaceId);
+    const spaceName = space ? space.name : 'a space';
+    const createdInvites = [];
 
     emails.forEach(email => {
         const user = users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
         if (user) {
             // Check if already member
-            if (!members.find(m => m.spaceId === req.params.spaceId && m.userId === user.id)) {
-                const newMember = {
-                    id: uuidv4(),
-                    spaceId: req.params.spaceId,
-                    userId: user.id,
-                    role: 'Member',
-                    joinedAt: new Date().toISOString()
-                };
-                members.push(newMember);
-                addedMembers.push(newMember);
+            if (members.find(m => m.spaceId === req.params.spaceId && m.userId === user.id)) {
+                return; // Skip, already a member
             }
+            // Check if already has pending invite
+            if (invites.find(i => i.spaceId === req.params.spaceId && i.userId === user.id && i.status === 'pending')) {
+                return; // Skip, already invited
+            }
+
+            const inviteId = uuidv4();
+            const newInvite = {
+                id: inviteId,
+                spaceId: req.params.spaceId,
+                spaceName: spaceName,
+                userId: user.id,
+                inviterId: inviterId,
+                inviterName: inviterName || 'Someone',
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            };
+            invites.push(newInvite);
+            createdInvites.push(newInvite);
+
+            // Create notification for the invited user
+            const notification = {
+                id: uuidv4(),
+                userId: user.id,
+                type: 'invite',
+                author: inviterName || 'Someone',
+                text: 'invited you to join',
+                target: spaceName,
+                spaceId: req.params.spaceId,
+                inviteId: inviteId,
+                action: 'View Invite',
+                read: false,
+                time: 'Just now',
+                createdAt: new Date().toISOString()
+            };
+            notifications.unshift(notification);
         }
     });
 
-    if (addedMembers.length > 0) {
-        writeData('space_members.json', members);
+    if (createdInvites.length > 0) {
+        writeData('space_invites.json', invites);
+        writeData('notifications.json', notifications);
     }
 
-    res.json({ success: true, added: addedMembers.length });
+    res.json({ success: true, invited: createdInvites.length });
+});
+
+// Get pending invites for a user
+app.get('/api/users/:userId/invites', (req, res) => {
+    const invites = readData('space_invites.json');
+    const userInvites = invites.filter(i => i.userId === req.params.userId && i.status === 'pending');
+    res.json(userInvites);
+});
+
+// Accept invite
+app.post('/api/invites/:inviteId/accept', (req, res) => {
+    const invites = readData('space_invites.json');
+    const members = readData('space_members.json');
+    const notifications = readData('notifications.json');
+
+    const inviteIndex = invites.findIndex(i => i.id === req.params.inviteId);
+    if (inviteIndex === -1) {
+        return res.status(404).json({ error: 'Invite not found' });
+    }
+
+    const invite = invites[inviteIndex];
+    if (invite.status !== 'pending') {
+        return res.status(400).json({ error: 'Invite already processed' });
+    }
+
+    // Update invite status
+    invites[inviteIndex].status = 'accepted';
+    invites[inviteIndex].respondedAt = new Date().toISOString();
+
+    // Add user as member
+    const newMember = {
+        id: uuidv4(),
+        spaceId: invite.spaceId,
+        userId: invite.userId,
+        role: 'Member',
+        joinedAt: new Date().toISOString()
+    };
+    members.push(newMember);
+
+    // Notify the inviter that their invite was accepted
+    const users = readData('users.json');
+    const acceptedUser = users.find(u => u.id === invite.userId);
+    if (invite.inviterId) {
+        const notification = {
+            id: uuidv4(),
+            userId: invite.inviterId,
+            type: 'system',
+            author: acceptedUser?.name || 'Someone',
+            text: 'accepted your invite to join',
+            target: invite.spaceName,
+            read: false,
+            time: 'Just now',
+            createdAt: new Date().toISOString()
+        };
+        notifications.unshift(notification);
+    }
+
+    writeData('space_invites.json', invites);
+    writeData('space_members.json', members);
+    writeData('notifications.json', notifications);
+
+    res.json({ success: true, member: newMember });
+});
+
+// Decline invite
+app.post('/api/invites/:inviteId/decline', (req, res) => {
+    const invites = readData('space_invites.json');
+
+    const inviteIndex = invites.findIndex(i => i.id === req.params.inviteId);
+    if (inviteIndex === -1) {
+        return res.status(404).json({ error: 'Invite not found' });
+    }
+
+    if (invites[inviteIndex].status !== 'pending') {
+        return res.status(400).json({ error: 'Invite already processed' });
+    }
+
+    invites[inviteIndex].status = 'declined';
+    invites[inviteIndex].respondedAt = new Date().toISOString();
+    writeData('space_invites.json', invites);
+
+    res.json({ success: true });
 });
 
 // ============ NOTIFICATIONS ROUTES ============
