@@ -611,24 +611,57 @@ app.put('/api/notifications/read-all', (req, res) => {
 });
 
 // ============ MESSAGES ROUTES ============
+// GET messages - join with user data
 app.get('/api/messages/:spaceId', (req, res) => {
     const messages = readData('messages.json');
-    const spaceMessages = messages.filter(m => m.spaceId === req.params.spaceId);
+    const users = readData('users.json');
+
+    const spaceMessages = messages
+        .filter(m => m.spaceId === req.params.spaceId)
+        .map(msg => {
+            // For system messages, return as-is
+            if (msg.type === 'system') return msg;
+
+            // Join with user data
+            const sender = users.find(u => u.id === msg.senderId);
+            return {
+                ...msg,
+                sender: sender?.name || msg.sender || 'Unknown User',
+                avatarColor: sender?.avatarColor || msg.avatarColor || '#9ca3af',
+                avatarImage: sender?.avatarImage ? `http://localhost:5000${sender.avatarImage}` : null
+            };
+        });
+
     res.json(spaceMessages);
 });
 
+// POST message - store only essential data
 app.post('/api/messages/:spaceId', (req, res) => {
+    const { senderId, text, type, mentions } = req.body;
+
     const messages = readData('messages.json');
     const newMessage = {
         id: uuidv4(),
         spaceId: req.params.spaceId,
-        ...req.body,
+        senderId,
+        text,
+        type: type || 'user',
+        mentions: mentions || [],
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         createdAt: new Date().toISOString()
     };
     messages.push(newMessage);
     writeData('messages.json', messages);
-    res.status(201).json(newMessage);
+
+    // Return with user data for immediate display
+    const users = readData('users.json');
+    const sender = users.find(u => u.id === senderId);
+    res.status(201).json({
+        ...newMessage,
+        sender: sender?.name || 'User',
+        avatarColor: sender?.avatarColor || '#ec4899',
+        avatarImage: sender?.avatarImage ? `http://localhost:5000${sender.avatarImage}` : null
+    });
 });
 
 // ============ FILES/UPLOADS ROUTES ============

@@ -2,108 +2,80 @@
   {
     "id": "msg-1",
     "spaceId": "space-1",
-    "sender": "Sarah Chen",
     "senderId": "user-2",
     "text": "Hey team! Just uploaded the new designs for review.",
-    "time": "10:30 AM",
     "type": "user",
-    "avatarColor": "#10b981",
+    "time": "10:30 AM",
     "createdAt": "2024-12-21T10:30:00.000Z"
   },
   {
     "id": "msg-2",
     "spaceId": "space-1",
     "sender": "System",
-    "text": "uploaded 'Design_v2.fig'",
-    "time": "10:30 AM",
+    "text": "Sarah Chen uploaded 'Design_v2.fig'",
     "type": "system",
+    "time": "10:30 AM",
     "createdAt": "2024-12-21T10:30:00.000Z"
   },
   {
     "id": "msg-3",
     "spaceId": "space-1",
-    "sender": "Mike Ross",
     "senderId": "user-3",
     "text": "Thanks Sarah! I'll take a look shortly.",
-    "time": "10:32 AM",
     "type": "user",
-    "avatarColor": "#f59e0b",
+    "time": "10:32 AM",
     "createdAt": "2024-12-21T10:32:00.000Z"
   },
   {
     "id": "4a30d14b-4a92-412c-a8bf-18b9c8db5726",
     "spaceId": "space-3",
-    "sender": "Maryam Tarek",
     "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
-    "text": "dd",
+    "text": "Hello everyone!",
     "type": "user",
-    "avatarColor": "#ec4899",
     "mentions": [],
     "time": "01:17 PM",
     "createdAt": "2025-12-21T11:17:23.790Z"
   },
   {
-    "id": "5ddb840e-2f10-47e6-8f29-0062b8b5886f",
-    "spaceId": "space-3",
-    "sender": "Maryam Tarek",
-    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
-    "text": "dd]",
-    "type": "user",
-    "avatarColor": "#ec4899",
-    "mentions": [],
-    "time": "01:19 PM",
-    "createdAt": "2025-12-21T11:19:28.634Z"
-  },
-  {
-    "id": "e63688f2-0ab7-45c8-9064-1c1354b043ec",
-    "spaceId": "space-3",
-    "sender": "Maryam Tarek",
-    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
-    "text": "dd\\",
-    "type": "user",
-    "avatarColor": "#ec4899",
-    "mentions": [],
-    "time": "01:21 PM",
-    "createdAt": "2025-12-21T11:21:19.910Z"
-  },
-  {
-    "id": "1dc757ae-b922-4dc5-99e9-527cb282cd42",
-    "spaceId": "space-2",
-    "sender": "Maryam Tarek",
-    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
-    "text": "ddd\\",
-    "type": "user",
-    "avatarColor": "#ec4899",
-    "mentions": [],
-    "time": "01:24 PM",
-    "createdAt": "2025-12-21T11:24:05.998Z"
-  },
-  {
-    "id": "23be67fb-d9c1-4d66-aa8e-496f4be424f6",
-    "spaceId": "space-3",
-    "sender": "Maryam Tarek",
-    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
-    "text": "dd",
-    "type": "user",
-    "avatarColor": "#ec4899",
-    "avatarImage": "http://localhost:5000/images/avatar_805bb207-48b8-4824-8f92-1b530b068298_1766315709135.jpeg",
-    "mentions": [],
-    "time": "01:26 PM",
-    "createdAt": "2025-12-21T11:26:27.192Z"
-  },
-  {
     "id": "476b09fc-6a36-4247-afb3-f5abda400a6a",
     "spaceId": "space-1",
-    "sender": "Maryam 2",
     "senderId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
-    "text": "@John ",
+    "text": "@John check this out!",
     "type": "user",
-    "avatarColor": "#3b82f6",
-    "avatarImage": null,
     "mentions": [
       "John"
     ],
     "time": "07:12 PM",
     "createdAt": "2025-12-21T17:12:06.394Z"
+  },
+  {
+    "id": "9dee645c-5a71-4169-a6e9-2e6ed02ee539",
+    "spaceId": "space-1",
+    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "text": "Woah",
+    "type": "user",
+    "mentions": [],
+    "time": "11:33 PM",
+    "createdAt": "2025-12-21T21:33:53.753Z"
+  },
+  {
+    "id": "d5f6d901-acfa-40c3-beb9-60e1820e92df",
+    "spaceId": "space-1",
+    "senderId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "text": "What",
+    "type": "user",
+    "mentions": [],
+    "time": "11:37 PM",
+    "createdAt": "2025-12-21T21:37:10.216Z"
+  },
+  {
+    "id": "25e60c18-e45d-4469-a045-4da9907c7369",
+    "spaceId": "space-1",
+    "senderId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "text": "What the hell!",
+    "type": "user",
+    "mentions": [],
+    "time": "11:40 PM",
+    "createdAt": "2025-12-21T21:40:06.555Z"
   }
 ]
