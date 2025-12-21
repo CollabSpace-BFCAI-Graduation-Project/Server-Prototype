@@ -299,47 +299,6 @@ app.put('/api/notifications/read-all', (req, res) => {
     res.json({ success: true });
 });
 
-// ============ FRIENDS ROUTES ============
-app.get('/api/friends', (req, res) => {
-    const { userId } = req.query;
-    const friends = readData('friends.json');
-    const userFriends = userId
-        ? friends.filter(f => f.userId === userId || f.friendId === userId)
-        : friends;
-    res.json(userFriends);
-});
-
-app.post('/api/friends', (req, res) => {
-    const friends = readData('friends.json');
-    const newFriend = {
-        id: uuidv4(),
-        ...req.body,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-    };
-    friends.push(newFriend);
-    writeData('friends.json', friends);
-    res.status(201).json(newFriend);
-});
-
-app.put('/api/friends/:id/accept', (req, res) => {
-    const friends = readData('friends.json');
-    const index = friends.findIndex(f => f.id === req.params.id);
-
-    if (index !== -1) {
-        friends[index].status = 'accepted';
-        writeData('friends.json', friends);
-    }
-    res.json({ success: true });
-});
-
-app.delete('/api/friends/:id', (req, res) => {
-    const friends = readData('friends.json');
-    const filtered = friends.filter(f => f.id !== req.params.id);
-    writeData('friends.json', filtered);
-    res.json({ success: true });
-});
-
 // ============ MESSAGES ROUTES ============
 app.get('/api/messages/:spaceId', (req, res) => {
     const messages = readData('messages.json');
