@@ -40,10 +40,15 @@ const writeData = (filename, data) => {
 
 // ============ AUTH ROUTES ============
 app.post('/api/auth/register', (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, username, email, password } = req.body;
 
-    if (!name || !email || !password) {
-        return res.status(400).json({ error: 'All fields are required' });
+    if (!name || !username || !email || !password) {
+        return res.status(400).json({ error: 'All fields are required (name, username, email, password)' });
+    }
+
+    // Validate username format
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        return res.status(400).json({ error: 'Username must be 3-20 characters, lowercase letters, numbers, and underscores only' });
     }
 
     const users = readData('users.json');
@@ -53,14 +58,19 @@ app.post('/api/auth/register', (req, res) => {
         return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Check if username exists
+    if (users.find(u => u.username === username)) {
+        return res.status(400).json({ error: 'Username already taken' });
+    }
+
     const newUser = {
         id: uuidv4(),
         name,
+        username,
         email,
         password, // In real app, hash this!
-        initials: name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-        avatarColor: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 5)],
-        role: 'Member',
+        avatarColor: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'][Math.floor(Math.random() * 8)],
+        avatarImage: null,
         bio: '',
         createdAt: new Date().toISOString()
     };
@@ -216,11 +226,12 @@ app.post('/api/spaces', (req, res) => {
     const spaces = readData('spaces.json');
     const newSpace = {
         id: uuidv4(),
-        ...req.body,
-        createdAt: new Date().toISOString(),
-        userCount: 0,
-        memberCount: 1,
-        isOnline: false
+        name: req.body.name,
+        description: req.body.description || '',
+        thumbnail: req.body.thumbnail || 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+        category: req.body.category || 'MEETING',
+        ownerId: req.body.ownerId || null,
+        createdAt: new Date().toISOString()
     };
     spaces.push(newSpace);
     writeData('spaces.json', spaces);
@@ -639,6 +650,67 @@ app.post('/api/files/:spaceId', (req, res) => {
     files.push(newFile);
     writeData('files.json', files);
     res.status(201).json(newFile);
+});
+
+// ============ USER FAVORITES ROUTES ============
+// Get user's favorite spaces
+app.get('/api/users/:userId/favorites', (req, res) => {
+    const favorites = readData('user_favorites.json');
+    const userFavorites = favorites.filter(f => f.userId === req.params.userId);
+    res.json(userFavorites.map(f => f.spaceId));
+});
+
+// Add space to favorites
+app.post('/api/users/:userId/favorites/:spaceId', (req, res) => {
+    const favorites = readData('user_favorites.json');
+
+    // Check if already favorited
+    const existing = favorites.find(f => f.userId === req.params.userId && f.spaceId === req.params.spaceId);
+    if (existing) {
+        return res.json({ success: true, message: 'Already favorited' });
+    }
+
+    const newFavorite = {
+        id: uuidv4(),
+        userId: req.params.userId,
+        spaceId: req.params.spaceId,
+        createdAt: new Date().toISOString()
+    };
+    favorites.push(newFavorite);
+    writeData('user_favorites.json', favorites);
+    res.status(201).json(newFavorite);
+});
+
+// Remove space from favorites
+app.delete('/api/users/:userId/favorites/:spaceId', (req, res) => {
+    const favorites = readData('user_favorites.json');
+    const filtered = favorites.filter(f => !(f.userId === req.params.userId && f.spaceId === req.params.spaceId));
+    writeData('user_favorites.json', filtered);
+    res.json({ success: true });
+});
+
+// Toggle favorite (convenience endpoint)
+app.post('/api/users/:userId/favorites/:spaceId/toggle', (req, res) => {
+    const favorites = readData('user_favorites.json');
+    const existing = favorites.find(f => f.userId === req.params.userId && f.spaceId === req.params.spaceId);
+
+    if (existing) {
+        // Remove favorite
+        const filtered = favorites.filter(f => f.id !== existing.id);
+        writeData('user_favorites.json', filtered);
+        res.json({ isFavorite: false });
+    } else {
+        // Add favorite
+        const newFavorite = {
+            id: uuidv4(),
+            userId: req.params.userId,
+            spaceId: req.params.spaceId,
+            createdAt: new Date().toISOString()
+        };
+        favorites.push(newFavorite);
+        writeData('user_favorites.json', favorites);
+        res.json({ isFavorite: true });
+    }
 });
 
 // Start server

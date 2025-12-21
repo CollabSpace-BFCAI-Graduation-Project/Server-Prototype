@@ -1,0 +1,38 @@
+[
+  {
+    "id": "fav-2",
+    "userId": "user-1",
+    "spaceId": "space-3",
+    "createdAt": "2024-01-02T00:00:00.000Z"
+  },
+  {
+    "id": "fav-3",
+    "userId": "user-1",
+    "spaceId": "space-6",
+    "createdAt": "2024-01-03T00:00:00.000Z"
+  },
+  {
+    "id": "fav-4",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "spaceId": "space-1",
+    "createdAt": "2025-12-21T10:00:00.000Z"
+  },
+  {
+    "id": "fav-5",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "spaceId": "space-4",
+    "createdAt": "2025-12-21T10:01:00.000Z"
+  },
+  {
+    "id": "fbad1476-4cb0-4766-8c20-4f0f5b978f7b",
+    "userId": "user-1",
+    "spaceId": "space-7",
+    "createdAt": "2025-12-21T20:34:17.463Z"
+  },
+  {
+    "id": "eb40fca1-d34b-44ef-ac2d-ae8c44dca586",
+    "userId": "user-1",
+    "spaceId": "space-1",
+    "createdAt": "2025-12-21T20:34:37.490Z"
+  }
+]
