@@ -172,8 +172,8 @@ app.post('/api/users/:id/avatar', (req, res) => {
     // Save new image
     fs.writeFileSync(filepath, base64Data, 'base64');
 
-    // Update user with image URL
-    const avatarImage = `http://localhost:${PORT}/images/${filename}`;
+    // Update user with relative image path (frontend will prepend API base)
+    const avatarImage = `/images/${filename}`;
     users[index].avatarImage = avatarImage;
     writeData('users.json', users);
 
