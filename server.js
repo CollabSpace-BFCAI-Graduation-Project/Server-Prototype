@@ -224,6 +224,19 @@ app.post('/api/spaces', (req, res) => {
     };
     spaces.push(newSpace);
     writeData('spaces.json', spaces);
+
+    // Add creator as owner in space_members
+    const members = readData('space_members.json');
+    const newMember = {
+        id: uuidv4(),
+        spaceId: newSpace.id,
+        userId: req.body.ownerId, // Assume ownerId is passed in body
+        role: 'Owner',
+        joinedAt: new Date().toISOString()
+    };
+    members.push(newMember);
+    writeData('space_members.json', members);
+
     res.status(201).json(newSpace);
 });
 
@@ -254,7 +267,154 @@ app.delete('/api/spaces/:id', (req, res) => {
     const spaces = readData('spaces.json');
     const filtered = spaces.filter(s => s.id !== req.params.id);
     writeData('spaces.json', filtered);
+
+    // Also delete all members of this space
+    const members = readData('space_members.json');
+    const filteredMembers = members.filter(m => m.spaceId !== req.params.id);
+    writeData('space_members.json', filteredMembers);
+
     res.json({ success: true });
+});
+
+// ============ SPACE MEMBERS ROUTES ============
+// Get all members of a space (with user data)
+app.get('/api/spaces/:spaceId/members', (req, res) => {
+    const members = readData('space_members.json');
+    const users = readData('users.json');
+
+    const spaceMembers = members
+        .filter(m => m.spaceId === req.params.spaceId)
+        .map(m => {
+            const user = users.find(u => u.id === m.userId);
+            if (user) {
+                const { password, ...userWithoutPassword } = user;
+                return {
+                    ...userWithoutPassword,
+                    ...m,
+                    memberId: m.id // Keep the membership id
+                };
+            }
+            return null;
+        })
+        .filter(Boolean);
+
+    res.json(spaceMembers);
+});
+
+// Get all spaces a user is a member of
+app.get('/api/users/:userId/spaces', (req, res) => {
+    const members = readData('space_members.json');
+    const spaces = readData('spaces.json');
+
+    const userSpaceIds = members
+        .filter(m => m.userId === req.params.userId)
+        .map(m => m.spaceId);
+
+    const userSpaces = spaces.filter(s => userSpaceIds.includes(s.id));
+    res.json(userSpaces);
+});
+
+// Add a member to a space
+app.post('/api/spaces/:spaceId/members', (req, res) => {
+    const { userId, role } = req.body;
+
+    if (!userId || !role) {
+        return res.status(400).json({ error: 'userId and role are required' });
+    }
+
+    const members = readData('space_members.json');
+
+    // Check if already a member
+    if (members.find(m => m.spaceId === req.params.spaceId && m.userId === userId)) {
+        return res.status(400).json({ error: 'User is already a member of this space' });
+    }
+
+    const newMember = {
+        id: uuidv4(),
+        spaceId: req.params.spaceId,
+        userId,
+        role,
+        joinedAt: new Date().toISOString()
+    };
+
+    members.push(newMember);
+    writeData('space_members.json', members);
+
+    // Return member with user data
+    const users = readData('users.json');
+    const user = users.find(u => u.id === userId);
+    if (user) {
+        const { password, ...userWithoutPassword } = user;
+        // Spread user data first, then member data to ensure space role takes precedence
+        res.status(201).json({ ...userWithoutPassword, ...newMember, memberId: newMember.id });
+    } else {
+        res.status(201).json(newMember);
+    }
+});
+
+// Update member role
+app.put('/api/spaces/:spaceId/members/:memberId', (req, res) => {
+    const { role } = req.body;
+    const members = readData('space_members.json');
+    const index = members.findIndex(m => m.id === req.params.memberId);
+
+    if (index === -1) {
+        return res.status(404).json({ error: 'Member not found' });
+    }
+
+    members[index].role = role;
+    writeData('space_members.json', members);
+    res.json(members[index]);
+});
+
+// Remove member from space
+app.delete('/api/spaces/:spaceId/members/:memberId', (req, res) => {
+    const members = readData('space_members.json');
+    const filtered = members.filter(m => m.id !== req.params.memberId);
+
+    if (filtered.length === members.length) {
+        return res.status(404).json({ error: 'Member not found' });
+    }
+
+    writeData('space_members.json', filtered);
+    res.json({ success: true });
+});
+
+// Invite members by email
+app.post('/api/spaces/:spaceId/invite', (req, res) => {
+    const { emails } = req.body;
+
+    if (!emails || !Array.isArray(emails)) {
+        return res.status(400).json({ error: 'emails array is required' });
+    }
+
+    const users = readData('users.json');
+    const members = readData('space_members.json');
+    const addedMembers = [];
+
+    emails.forEach(email => {
+        const user = users.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+        if (user) {
+            // Check if already member
+            if (!members.find(m => m.spaceId === req.params.spaceId && m.userId === user.id)) {
+                const newMember = {
+                    id: uuidv4(),
+                    spaceId: req.params.spaceId,
+                    userId: user.id,
+                    role: 'Member',
+                    joinedAt: new Date().toISOString()
+                };
+                members.push(newMember);
+                addedMembers.push(newMember);
+            }
+        }
+    });
+
+    if (addedMembers.length > 0) {
+        writeData('space_members.json', members);
+    }
+
+    res.json({ success: true, added: addedMembers.length });
 });
 
 // ============ NOTIFICATIONS ROUTES ============

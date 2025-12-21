@@ -1,0 +1,93 @@
+[
+  {
+    "id": "sm-1",
+    "spaceId": "space-1",
+    "userId": "user-1",
+    "role": "Owner",
+    "joinedAt": "2024-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "sm-2",
+    "spaceId": "space-1",
+    "userId": "user-2",
+    "role": "Admin",
+    "joinedAt": "2024-01-05T00:00:00.000Z"
+  },
+  {
+    "id": "sm-3",
+    "spaceId": "space-1",
+    "userId": "user-3",
+    "role": "Member",
+    "joinedAt": "2024-01-10T00:00:00.000Z"
+  },
+  {
+    "id": "sm-4",
+    "spaceId": "space-2",
+    "userId": "user-2",
+    "role": "Owner",
+    "joinedAt": "2024-01-02T00:00:00.000Z"
+  },
+  {
+    "id": "sm-5",
+    "spaceId": "space-2",
+    "userId": "user-1",
+    "role": "Member",
+    "joinedAt": "2024-01-08T00:00:00.000Z"
+  },
+  {
+    "id": "sm-6",
+    "spaceId": "space-3",
+    "userId": "user-1",
+    "role": "Owner",
+    "joinedAt": "2024-01-03T00:00:00.000Z"
+  },
+  {
+    "id": "sm-7",
+    "spaceId": "space-4",
+    "userId": "user-1",
+    "role": "Owner",
+    "joinedAt": "2024-01-04T00:00:00.000Z"
+  },
+  {
+    "id": "sm-8",
+    "spaceId": "space-5",
+    "userId": "user-1",
+    "role": "Owner",
+    "joinedAt": "2024-01-05T00:00:00.000Z"
+  },
+  {
+    "id": "sm-9",
+    "spaceId": "space-6",
+    "userId": "user-3",
+    "role": "Owner",
+    "joinedAt": "2024-01-06T00:00:00.000Z"
+  },
+  {
+    "id": "sm-10",
+    "spaceId": "space-7",
+    "userId": "user-2",
+    "role": "Owner",
+    "joinedAt": "2024-01-07T00:00:00.000Z"
+  },
+  {
+    "id": "cb48b1f8-83ba-4426-909f-7c36f77144c7",
+    "spaceId": "02d74c0c-f387-4605-b04d-6fbc62d54bc7",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-21T14:57:39.635Z"
+  },
+  {
+    "id": "32f9191e-3c7e-4850-b6f1-ad9a982399fa",
+    "spaceId": "292edaa5-a98e-48a3-bdb1-9b003ec2b9ce",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-21T15:03:32.508Z"
+  },
+  {
+    "id": "75c53b33-f21c-462c-ba68-2ed4ccabfcc3",
+    "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-21T15:10:59.095Z"
+  }
+]
