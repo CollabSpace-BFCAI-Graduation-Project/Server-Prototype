@@ -380,6 +380,30 @@ app.delete('/api/spaces/:spaceId/members/:memberId', (req, res) => {
     res.json({ success: true });
 });
 
+// Leave space (user removes themselves)
+app.post('/api/spaces/:spaceId/leave', (req, res) => {
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const members = readData('space_members.json');
+    const membership = members.find(m => m.spaceId === req.params.spaceId && m.userId === userId);
+
+    if (!membership) {
+        return res.status(404).json({ error: 'You are not a member of this space' });
+    }
+
+    if (membership.role === 'Owner') {
+        return res.status(400).json({ error: 'Owner cannot leave the space. Transfer ownership first.' });
+    }
+
+    const filtered = members.filter(m => m.id !== membership.id);
+    writeData('space_members.json', filtered);
+    res.json({ success: true });
+});
+
 // Invite members by email (creates pending invite)
 app.post('/api/spaces/:spaceId/invite', (req, res) => {
     const { emails, inviterName, inviterId } = req.body;
