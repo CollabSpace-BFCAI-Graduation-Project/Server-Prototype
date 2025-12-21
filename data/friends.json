@@ -1,0 +1,35 @@
+[
+    {
+        "id": "friend-1",
+        "userId": "user-1",
+        "friendId": "user-2",
+        "friendName": "Sarah Chen",
+        "friendInitials": "SC",
+        "friendAvatarColor": "#10b981",
+        "status": "accepted",
+        "isOnline": true,
+        "createdAt": "2024-01-10T00:00:00.000Z"
+    },
+    {
+        "id": "friend-2",
+        "userId": "user-1",
+        "friendId": "user-3",
+        "friendName": "Mike Ross",
+        "friendInitials": "MR",
+        "friendAvatarColor": "#f59e0b",
+        "status": "accepted",
+        "isOnline": false,
+        "createdAt": "2024-01-11T00:00:00.000Z"
+    },
+    {
+        "id": "friend-3",
+        "userId": "user-1",
+        "friendId": "user-4",
+        "friendName": "Tom Wilson",
+        "friendInitials": "TW",
+        "friendAvatarColor": "#8b5cf6",
+        "status": "pending",
+        "isOnline": true,
+        "createdAt": "2024-01-12T00:00:00.000Z"
+    }
+]

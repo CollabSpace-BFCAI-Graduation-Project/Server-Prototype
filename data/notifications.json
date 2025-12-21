@@ -1,0 +1,47 @@
+[
+    {
+        "id": "notif-1",
+        "userId": "user-1",
+        "type": "mention",
+        "author": "Sarah Chen",
+        "text": "mentioned you in",
+        "target": "Design Weekly",
+        "time": "10 mins ago",
+        "read": false,
+        "createdAt": "2024-12-21T09:00:00.000Z"
+    },
+    {
+        "id": "notif-2",
+        "userId": "user-1",
+        "type": "session",
+        "author": "Tom Wilson",
+        "text": "started a session in",
+        "target": "Project Alpha",
+        "action": "Join Session",
+        "time": "1 hour ago",
+        "read": false,
+        "createdAt": "2024-12-21T08:00:00.000Z"
+    },
+    {
+        "id": "notif-3",
+        "userId": "user-1",
+        "type": "file",
+        "author": "Mike Ross",
+        "text": "uploaded",
+        "target": "Specs_v2.pdf",
+        "time": "2 hours ago",
+        "read": true,
+        "createdAt": "2024-12-21T07:00:00.000Z"
+    },
+    {
+        "id": "notif-4",
+        "userId": "user-1",
+        "type": "invite",
+        "author": "System",
+        "text": "You were added to",
+        "target": "Town Hall",
+        "time": "1 day ago",
+        "read": true,
+        "createdAt": "2024-12-20T09:00:00.000Z"
+    }
+]

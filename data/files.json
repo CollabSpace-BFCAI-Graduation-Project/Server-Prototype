@@ -1,0 +1,38 @@
+[
+    {
+        "id": "file-1",
+        "spaceId": "space-1",
+        "name": "Design_v2.fig",
+        "type": "FIG",
+        "size": "2.4 MB",
+        "time": "Just now",
+        "icon": "image",
+        "color": "#3b82f6",
+        "uploadedBy": "user-2",
+        "createdAt": "2024-12-21T10:30:00.000Z"
+    },
+    {
+        "id": "file-2",
+        "spaceId": "space-1",
+        "name": "Assets_Bundle.zip",
+        "type": "ZIP",
+        "size": "156 MB",
+        "time": "2d ago",
+        "icon": "3d",
+        "color": "#f59e0b",
+        "uploadedBy": "user-3",
+        "createdAt": "2024-12-19T10:00:00.000Z"
+    },
+    {
+        "id": "file-3",
+        "spaceId": "space-1",
+        "name": "Meeting_Notes.docx",
+        "type": "DOCX",
+        "size": "15 KB",
+        "time": "3d ago",
+        "icon": "doc",
+        "color": "#3b82f6",
+        "uploadedBy": "user-1",
+        "createdAt": "2024-12-18T10:00:00.000Z"
+    }
+]
