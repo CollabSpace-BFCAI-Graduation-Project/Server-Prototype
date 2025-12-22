@@ -34,5 +34,11 @@
     "userId": "user-1",
     "spaceId": "space-1",
     "createdAt": "2025-12-21T20:34:37.490Z"
+  },
+  {
+    "id": "689faf44-bc27-4493-bf6b-47e6640e6ac2",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "spaceId": "space-1",
+    "createdAt": "2025-12-22T13:35:05.959Z"
   }
 ]

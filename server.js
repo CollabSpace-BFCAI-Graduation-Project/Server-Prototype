@@ -18,7 +18,7 @@ if (!fs.existsSync(IMAGES_DIR)) {
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '5mb' })); // Increase limit for base64 images
+app.use(express.json({ limit: '50mb' })); // Increase limit for base64 images
 
 // Serve static images
 app.use('/images', express.static(IMAGES_DIR));
@@ -219,7 +219,58 @@ app.delete('/api/users/:id/avatar', (req, res) => {
 // ============ SPACES ROUTES ============
 app.get('/api/spaces', (req, res) => {
     const spaces = readData('spaces.json');
-    res.json(spaces);
+    const spaceMembers = readData('space_members.json');
+    const users = readData('users.json');
+
+    // Filter by userId if provided
+    const filteredSpaces = req.query.userId
+        ? spaces.filter(s => {
+            // Check if user is a member of this space
+            return spaceMembers.some(m => m.spaceId === s.id && m.userId === req.query.userId);
+        })
+        : spaces;
+
+    // Join spaces with their members (including user data) and files
+    const spacesWithMembers = filteredSpaces.map(space => {
+        const members = spaceMembers
+            .filter(m => m.spaceId === space.id)
+            .map(member => {
+                const user = users.find(u => u.id === member.userId);
+                return {
+                    memberId: member.id,
+                    id: member.id,
+                    spaceId: member.spaceId,
+                    userId: member.userId,
+                    role: member.role,
+                    joinedAt: member.joinedAt,
+                    name: user?.name || 'Unknown User',
+                    username: user?.username,
+                    email: user?.email,
+                    avatarColor: user?.avatarColor || '#6b7280',
+                    avatarImage: user?.avatarImage ? `http://localhost:5000${user.avatarImage}` : null
+                };
+            });
+
+        const spaceFiles = readData('files.json')
+            .filter(f => f.spaceId === space.id)
+            .map(file => {
+                const uploader = users.find(u => u.id === file.uploadedBy);
+                return {
+                    ...file,
+                    uploaderName: uploader?.name || 'Unknown User'
+                };
+            });
+
+        return {
+            ...space,
+            members,
+            memberCount: members.length,
+            files: spaceFiles,
+            fileCount: spaceFiles.length
+        };
+    });
+
+    res.json(spacesWithMembers);
 });
 
 app.post('/api/spaces', (req, res) => {
@@ -379,15 +430,39 @@ app.put('/api/spaces/:spaceId/members/:memberId', (req, res) => {
 });
 
 // Remove member from space
+// Remove member from space
 app.delete('/api/spaces/:spaceId/members/:memberId', (req, res) => {
     const members = readData('space_members.json');
-    const filtered = members.filter(m => m.id !== req.params.memberId);
+    const memberToDelete = members.find(m => m.id === req.params.memberId);
 
-    if (filtered.length === members.length) {
+    if (!memberToDelete) {
         return res.status(404).json({ error: 'Member not found' });
     }
 
+    const filtered = members.filter(m => m.id !== req.params.memberId);
     writeData('space_members.json', filtered);
+
+    // Create notification for removed user
+    const spaces = readData('spaces.json');
+    const space = spaces.find(s => s.id === req.params.spaceId);
+
+    if (space) {
+        const notifications = readData('notifications.json');
+        const newNotification = {
+            id: uuidv4(),
+            userId: memberToDelete.userId,
+            type: 'system',
+            author: 'System',
+            text: `You have been removed from space`,
+            target: space.name,
+            spaceId: space.id,
+            read: false,
+            createdAt: new Date().toISOString()
+        };
+        notifications.push(newNotification);
+        writeData('notifications.json', notifications);
+    }
+
     res.json({ success: true });
 });
 
@@ -471,7 +546,6 @@ app.post('/api/spaces/:spaceId/invite', (req, res) => {
                 inviteId: inviteId,
                 action: 'View Invite',
                 read: false,
-                time: 'Just now',
                 createdAt: new Date().toISOString()
             };
             notifications.unshift(notification);
@@ -535,7 +609,6 @@ app.post('/api/invites/:inviteId/accept', (req, res) => {
             text: 'accepted your invite to join',
             target: invite.spaceName,
             read: false,
-            time: 'Just now',
             createdAt: new Date().toISOString()
         };
         notifications.unshift(notification);
@@ -665,24 +738,132 @@ app.post('/api/messages/:spaceId', (req, res) => {
 });
 
 // ============ FILES/UPLOADS ROUTES ============
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Get files for a space
 app.get('/api/files/:spaceId', (req, res) => {
     const files = readData('files.json');
     const spaceFiles = files.filter(f => f.spaceId === req.params.spaceId);
     res.json(spaceFiles);
 });
 
+// Upload a file (base64 encoded)
 app.post('/api/files/:spaceId', (req, res) => {
+    const { name, fileData, uploadedBy } = req.body;
+
+    if (!name || !fileData) {
+        return res.status(400).json({ error: 'File name and data are required' });
+    }
+
+    // Parse base64 data (format: "data:mimetype;base64,...")
+    const matches = fileData.match(/^data:(.+);base64,(.+)$/);
+    if (!matches) {
+        return res.status(400).json({ error: 'Invalid file format. Expected base64 data URL.' });
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const extension = name.split('.').pop() || 'bin';
+    const storedFilename = `${uuidv4()}.${extension}`;
+    const filepath = path.join(UPLOADS_DIR, storedFilename);
+
+    // Save file to disk
+    fs.writeFileSync(filepath, base64Data, 'base64');
+
+    // Calculate file size
+    const stats = fs.statSync(filepath);
+    const fileSizeBytes = stats.size;
+    let size = fileSizeBytes + ' B';
+    if (fileSizeBytes > 1024 * 1024) size = (fileSizeBytes / (1024 * 1024)).toFixed(1) + ' MB';
+    else if (fileSizeBytes > 1024) size = (fileSizeBytes / 1024).toFixed(1) + ' KB';
+
     const files = readData('files.json');
     const newFile = {
         id: uuidv4(),
         spaceId: req.params.spaceId,
-        ...req.body,
-        time: 'Just now',
+        name: name,
+        storedFilename: storedFilename,
+        type: extension.toUpperCase(),
+        mimeType: mimeType,
+        size: size,
+        uploadedBy: uploadedBy || 'Unknown',
+        downloadUrl: `/uploads/${storedFilename}`,
         createdAt: new Date().toISOString()
     };
+
     files.push(newFile);
     writeData('files.json', files);
     res.status(201).json(newFile);
+});
+
+// Download a specific file
+app.get('/api/files/:fileId/download', (req, res) => {
+    const files = readData('files.json');
+    const file = files.find(f => f.id === req.params.fileId);
+
+    if (!file || !file.storedFilename) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+
+    const filepath = path.join(UPLOADS_DIR, file.storedFilename);
+    if (!fs.existsSync(filepath)) {
+        return res.status(404).json({ error: 'File not found on disk' });
+    }
+
+    res.download(filepath, file.name);
+});
+
+// Delete a file
+app.delete('/api/files/:fileId', (req, res) => {
+    const { userId } = req.body; // User requesting deletion
+
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const files = readData('files.json');
+    const fileIndex = files.findIndex(f => f.id === req.params.fileId);
+
+    if (fileIndex === -1) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+
+    const file = files[fileIndex];
+
+    // Check permissions: user must be uploader, or admin/owner of the space
+    const spaceMembers = readData('space_members.json');
+    const spaces = readData('spaces.json');
+    const space = spaces.find(s => s.id === file.spaceId);
+    const membership = spaceMembers.find(m => m.spaceId === file.spaceId && m.userId === userId);
+
+    const isUploader = file.uploadedBy === userId;
+    const isOwner = space?.ownerId === userId;
+    const isAdmin = membership?.role === 'Admin' || membership?.role === 'Owner';
+
+    if (!isUploader && !isOwner && !isAdmin) {
+        return res.status(403).json({ error: 'You do not have permission to delete this file' });
+    }
+
+    // Delete file from disk if it exists
+    if (file.storedFilename) {
+        const filepath = path.join(UPLOADS_DIR, file.storedFilename);
+        if (fs.existsSync(filepath)) {
+            fs.unlinkSync(filepath);
+        }
+    }
+
+    // Remove from files.json
+    files.splice(fileIndex, 1);
+    writeData('files.json', files);
+
+    res.json({ message: 'File deleted successfully', fileId: req.params.fileId });
 });
 
 // ============ USER FAVORITES ROUTES ============

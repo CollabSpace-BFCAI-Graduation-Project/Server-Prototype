@@ -103,5 +103,61 @@
     "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
     "role": "Member",
     "joinedAt": "2025-12-21T16:14:59.436Z"
+  },
+  {
+    "id": "dd0e819f-e7e2-4249-8a1c-fc161c5a3a6f",
+    "spaceId": "0eea01fe-868d-4fa2-82e2-36604760c12f",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-22T08:18:13.324Z"
+  },
+  {
+    "id": "9fdf3daa-9d44-4737-80be-240fbbfda088",
+    "spaceId": "4c589ed7-61b2-4d33-a60d-0be1520c76fa",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "role": "Admin",
+    "joinedAt": "2025-12-22T08:34:11.119Z"
+  },
+  {
+    "id": "9fdf3daa-9d44-4737-80be-240fbbfda088",
+    "spaceId": "4c589ed7-61b2-4d33-a60d-0be1520c76fa",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-22T08:34:11.119Z"
+  },
+  {
+    "id": "9f462c47-a7cf-48b9-be57-28f806ae9211",
+    "spaceId": "53520928-4a72-4541-a967-47a91e351f12",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-22T09:06:41.297Z"
+  },
+  {
+    "id": "e9a15b67-ca1b-4e82-83c8-25c60eddad84",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Owner",
+    "joinedAt": "2025-12-22T09:46:57.976Z"
+  },
+  {
+    "id": "8e4d9ace-3433-43ca-bcfd-753fabe73b90",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "userId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "role": "Owner",
+    "joinedAt": "2025-12-22T09:50:44.588Z"
+  },
+  {
+    "id": "1e0e6269-a11c-40d3-9e42-3ab30b3f3367",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "role": "Admin",
+    "joinedAt": "2025-12-22T09:57:40.539Z"
+  },
+  {
+    "id": "23407b99-b00d-4f0e-8e48-bd8f9cd79097",
+    "spaceId": "space-1",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "role": "Member",
+    "joinedAt": "2025-12-22T11:55:44.547Z"
   }
 ]

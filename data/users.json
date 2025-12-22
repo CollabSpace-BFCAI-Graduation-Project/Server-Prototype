@@ -6,7 +6,7 @@
     "email": "john@example.com",
     "password": "password123",
     "avatarColor": "#3b82f6",
-    "avatarImage": null,
+    "avatarImage": "/images/avatar_user-1_1766401477259.jpeg",
     "bio": "Product designer and metaverse enthusiast",
     "createdAt": "2024-01-01T00:00:00.000Z"
   },
@@ -72,7 +72,7 @@
     "email": "alyaa@gmail.com",
     "password": "12345678",
     "avatarColor": "#f59e0b",
-    "avatarImage": null,
+    "avatarImage": "/images/avatar_0dc7ef4c-89dd-45e7-b743-97a1bdc368b0_1766380009948.jpeg",
     "bio": "",
     "createdAt": "2025-12-21T16:13:24.033Z"
   }

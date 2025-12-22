@@ -1,13 +1,150 @@
 [
   {
+    "id": "d093f79d-442e-47e6-9134-894688d0cd51",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Alyaa Gamal",
+    "text": "accepted your invite to join",
+    "target": "Acme Corp HQ",
+    "read": true,
+    "createdAt": "2025-12-22T12:43:50.866Z"
+  },
+  {
+    "id": "b5496b65-1208-4115-b256-2fad2d5719fc",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "type": "invite",
+    "author": "Maryam Tareq",
+    "text": "invited you to join",
+    "target": "Acme Corp HQ",
+    "spaceId": "space-1",
+    "inviteId": "4b5f17a0-7d0c-4522-9346-c7355e52e0a5",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T12:43:21.778Z"
+  },
+  {
+    "id": "9863328a-d6d6-44e1-91f3-307010343e81",
+    "userId": "user-1",
+    "type": "system",
+    "author": "Maryam Tareq",
+    "text": "accepted your invite to join",
+    "target": "Acme Corp HQ",
+    "read": false,
+    "createdAt": "2025-12-22T11:55:44.547Z"
+  },
+  {
+    "id": "d3e86a1d-6186-4f5e-8b92-bf907eef3ca7",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "invite",
+    "author": "John Doe",
+    "text": "invited you to join",
+    "target": "Acme Corp HQ",
+    "spaceId": "space-1",
+    "inviteId": "7db47d48-ffad-4dc1-861a-fcd61b07b434",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T11:55:30.311Z"
+  },
+  {
+    "id": "f188dd00-5838-4f06-b6ab-f014a08e23af",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Sarah Chen",
+    "text": "accepted your invite to join",
+    "target": "New fff",
+    "read": true,
+    "createdAt": "2025-12-22T10:34:25.150Z"
+  },
+  {
+    "id": "9c17c60e-46c0-4f9e-8a66-4f1c6399ec3d",
+    "userId": "user-2",
+    "type": "invite",
+    "author": "Maryam Tareq",
+    "text": "invited you to join",
+    "target": "New fff",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "inviteId": "7fc5e0ef-fc80-4301-81a7-4b2271d93d50",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T10:33:55.813Z"
+  },
+  {
+    "id": "3de460a1-ea28-4887-b1a1-dd245182b81a",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "type": "system",
+    "author": "John Doe",
+    "text": "accepted your invite to join",
+    "target": "New fff",
+    "read": true,
+    "createdAt": "2025-12-22T10:23:10.542Z"
+  },
+  {
+    "id": "2d205bbd-b2c9-4234-a930-2066e71333ff",
+    "userId": "user-1",
+    "type": "invite",
+    "author": "Alyaa Gamal",
+    "text": "invited you to join",
+    "target": "New fff",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "inviteId": "4b4d12df-10f4-4b1a-9337-b8cc4de7c1ff",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T10:22:04.764Z"
+  },
+  {
+    "id": "ec8f8e58-dfc1-4f9a-9a09-f64a94c72cf5",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Alyaa Gamal",
+    "text": "accepted your invite to join",
+    "target": "fff",
+    "read": true,
+    "createdAt": "2025-12-22T09:57:40.539Z"
+  },
+  {
+    "id": "1d6c4a0a-616d-4854-b23f-c5dbed491070",
+    "userId": "805bb207-48b8-4824-8f92-1b530b068298",
+    "type": "system",
+    "author": "Maryam 2",
+    "text": "accepted your invite to join",
+    "target": "fff",
+    "read": true,
+    "createdAt": "2025-12-22T09:50:44.589Z"
+  },
+  {
+    "id": "4894f1a2-cd99-4319-80cd-225660b21f63",
+    "userId": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "type": "invite",
+    "author": "Maryam Tareq",
+    "text": "invited you to join",
+    "target": "fff",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "inviteId": "3aaf0e8f-1776-40a7-95e5-9294c414dc1e",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T09:49:03.196Z"
+  },
+  {
+    "id": "b092de4a-3d28-4ae9-b47c-d40b6b14d124",
+    "userId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
+    "type": "invite",
+    "author": "Maryam Tareq",
+    "text": "invited you to join",
+    "target": "fff",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "inviteId": "b28486b0-4f20-49c9-807b-795a3cb8addb",
+    "action": "View Invite",
+    "read": true,
+    "createdAt": "2025-12-22T09:49:03.196Z"
+  },
+  {
     "id": "6af9633a-dd30-4478-9d9b-15597288ac3e",
     "userId": "526f2cd3-56ff-40b2-8de4-c1e966a53805",
     "type": "mention",
     "author": "Maryam 2",
     "text": "mentioned you in",
     "target": "Acme Corp HQ",
-    "read": false,
-    "time": "Just now",
+    "read": true,
     "createdAt": "2025-12-21T17:12:06.399Z"
   },
   {
@@ -17,8 +154,7 @@
     "author": "Alyaa Gamal",
     "text": "accepted your invite to join",
     "target": "test",
-    "read": false,
-    "time": "Just now",
+    "read": true,
     "createdAt": "2025-12-21T16:14:59.436Z"
   },
   {
@@ -31,8 +167,7 @@
     "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
     "inviteId": "cbf8d2a7-ffa7-4eda-ae37-9ec5d6c8b4e4",
     "action": "View Invite",
-    "read": false,
-    "time": "Just now",
+    "read": true,
     "createdAt": "2025-12-21T16:14:19.705Z"
   },
   {
@@ -42,8 +177,7 @@
     "author": "Maryam 2",
     "text": "accepted your invite to join",
     "target": "test",
-    "read": false,
-    "time": "Just now",
+    "read": true,
     "createdAt": "2025-12-21T16:10:46.531Z"
   },
   {
@@ -56,8 +190,7 @@
     "spaceId": "377f3f05-981b-4685-b539-82c6db2bb15b",
     "inviteId": "0a4c9fe2-47c6-4044-b911-c132c8e48684",
     "action": "View Invite",
-    "read": false,
-    "time": "Just now",
+    "read": true,
     "createdAt": "2025-12-21T16:10:16.985Z"
   },
   {
@@ -68,8 +201,8 @@
     "text": "invited you to join",
     "target": "Test invite",
     "spaceId": "e9fdfb43-67e6-41ed-85f6-c2e1356c041b",
-    "read": false,
-    "time": "Just now",
+    "inviteId": "test-invite-001",
+    "read": true,
     "createdAt": "2025-12-21T15:57:30.238Z"
   },
   {
@@ -79,7 +212,6 @@
     "author": "Sarah Chen",
     "text": "mentioned you in",
     "target": "Design Weekly",
-    "time": "10 mins ago",
     "read": false,
     "createdAt": "2024-12-21T09:00:00.000Z"
   },
@@ -91,7 +223,6 @@
     "text": "started a session in",
     "target": "Project Alpha",
     "action": "Join Session",
-    "time": "1 hour ago",
     "read": false,
     "createdAt": "2024-12-21T08:00:00.000Z"
   },
@@ -102,7 +233,6 @@
     "author": "Mike Ross",
     "text": "uploaded",
     "target": "Specs_v2.pdf",
-    "time": "2 hours ago",
     "read": true,
     "createdAt": "2024-12-21T07:00:00.000Z"
   },
@@ -113,8 +243,18 @@
     "author": "System",
     "text": "You were added to",
     "target": "Town Hall",
-    "time": "1 day ago",
     "read": true,
     "createdAt": "2024-12-20T09:00:00.000Z"
+  },
+  {
+    "id": "afe756c3-4aec-469d-bcf4-f2c7f6e93e69",
+    "userId": "user-1",
+    "type": "system",
+    "author": "System",
+    "text": "You have been removed from space",
+    "target": "New fff",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "read": true,
+    "createdAt": "2025-12-22T10:59:28.175Z"
   }
 ]

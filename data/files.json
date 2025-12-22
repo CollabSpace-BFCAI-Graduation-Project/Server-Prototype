@@ -1,38 +1,101 @@
 [
-    {
-        "id": "file-1",
-        "spaceId": "space-1",
-        "name": "Design_v2.fig",
-        "type": "FIG",
-        "size": "2.4 MB",
-        "time": "Just now",
-        "icon": "image",
-        "color": "#3b82f6",
-        "uploadedBy": "user-2",
-        "createdAt": "2024-12-21T10:30:00.000Z"
-    },
-    {
-        "id": "file-2",
-        "spaceId": "space-1",
-        "name": "Assets_Bundle.zip",
-        "type": "ZIP",
-        "size": "156 MB",
-        "time": "2d ago",
-        "icon": "3d",
-        "color": "#f59e0b",
-        "uploadedBy": "user-3",
-        "createdAt": "2024-12-19T10:00:00.000Z"
-    },
-    {
-        "id": "file-3",
-        "spaceId": "space-1",
-        "name": "Meeting_Notes.docx",
-        "type": "DOCX",
-        "size": "15 KB",
-        "time": "3d ago",
-        "icon": "doc",
-        "color": "#3b82f6",
-        "uploadedBy": "user-1",
-        "createdAt": "2024-12-18T10:00:00.000Z"
-    }
+  {
+    "id": "file-1",
+    "spaceId": "space-1",
+    "name": "Design_v2.fig",
+    "type": "FIG",
+    "size": "2.4 MB",
+    "uploadedBy": "user-2",
+    "createdAt": "2024-12-21T10:30:00.000Z"
+  },
+  {
+    "id": "file-2",
+    "spaceId": "space-1",
+    "name": "Assets_Bundle.zip",
+    "type": "ZIP",
+    "size": "156 MB",
+    "uploadedBy": "user-3",
+    "createdAt": "2024-12-19T10:00:00.000Z"
+  },
+  {
+    "id": "file-3",
+    "spaceId": "space-1",
+    "name": "Meeting_Notes.docx",
+    "type": "DOCX",
+    "size": "15 KB",
+    "uploadedBy": "user-1",
+    "createdAt": "2024-12-18T10:00:00.000Z"
+  },
+  {
+    "id": "72feff2a-b081-4a32-b081-b689cfa6cda9",
+    "spaceId": "space-1",
+    "name": "Screenshot 2025-12-18 001144.png",
+    "storedFilename": "755d17e9-7190-4684-91f7-01787a345008.png",
+    "type": "PNG",
+    "mimeType": "image/png",
+    "size": "35.1 KB",
+    "uploadedBy": "805bb207-48b8-4824-8f92-1b530b068298",
+    "downloadUrl": "/uploads/755d17e9-7190-4684-91f7-01787a345008.png",
+    "createdAt": "2025-12-22T12:07:16.664Z"
+  },
+  {
+    "id": "68b3897f-e622-463d-80c9-d20d6a25a000",
+    "spaceId": "space-1",
+    "name": "discovring bugs on react app ui for collabspace.pdf",
+    "storedFilename": "1d85843d-526a-4476-9d02-a86e97441586.pdf",
+    "type": "PDF",
+    "mimeType": "application/pdf",
+    "size": "701.8 KB",
+    "uploadedBy": "805bb207-48b8-4824-8f92-1b530b068298",
+    "downloadUrl": "/uploads/1d85843d-526a-4476-9d02-a86e97441586.pdf",
+    "createdAt": "2025-12-22T12:14:42.887Z"
+  },
+  {
+    "id": "624c3a54-8051-4f6b-a8f2-e8440c7c7b85",
+    "spaceId": "space-1",
+    "name": "Elastic Beanstalk.pdf",
+    "storedFilename": "fd8fbab4-4ce5-45fc-9777-6294516b9ac3.pdf",
+    "type": "PDF",
+    "mimeType": "application/pdf",
+    "size": "6.3 MB",
+    "uploadedBy": "805bb207-48b8-4824-8f92-1b530b068298",
+    "downloadUrl": "/uploads/fd8fbab4-4ce5-45fc-9777-6294516b9ac3.pdf",
+    "createdAt": "2025-12-22T12:18:21.527Z"
+  },
+  {
+    "id": "0f453029-f7a8-44a2-b7cb-f0ea9633d195",
+    "spaceId": "bf6b139a-5249-44ca-8b51-3e3c1c8e7d36",
+    "name": "tired_bird's Lo-Fi Room on 12-14-25 at 10.23 PM.png",
+    "storedFilename": "c0a385d7-f3bd-4514-8f3e-e078470e74e3.png",
+    "type": "PNG",
+    "mimeType": "image/png",
+    "size": "799.7 KB",
+    "uploadedBy": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "downloadUrl": "/uploads/c0a385d7-f3bd-4514-8f3e-e078470e74e3.png",
+    "createdAt": "2025-12-22T12:41:56.966Z"
+  },
+  {
+    "id": "9ba07ce0-381a-44eb-89d6-c855ce4c202b",
+    "spaceId": "space-1",
+    "name": "passenger_satisfaction_v4_fulfilling_requirements.pdf",
+    "storedFilename": "73b35589-57ef-43d5-aab5-f29fe236d5dd.pdf",
+    "type": "PDF",
+    "mimeType": "application/pdf",
+    "size": "1.5 MB",
+    "uploadedBy": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "downloadUrl": "/uploads/73b35589-57ef-43d5-aab5-f29fe236d5dd.pdf",
+    "createdAt": "2025-12-22T12:46:50.078Z"
+  },
+  {
+    "id": "c4d1f417-73d3-40ff-aec1-cd6dc15cabe1",
+    "spaceId": "space-1",
+    "name": "ElasticBeanstalk_Presentation.pptx",
+    "storedFilename": "c00a827f-15eb-4e6f-b060-d46fd49c503d.pptx",
+    "type": "PPTX",
+    "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "size": "861.4 KB",
+    "uploadedBy": "0dc7ef4c-89dd-45e7-b743-97a1bdc368b0",
+    "downloadUrl": "/uploads/c00a827f-15eb-4e6f-b060-d46fd49c503d.pptx",
+    "createdAt": "2025-12-22T13:24:22.661Z"
+  }
 ]
