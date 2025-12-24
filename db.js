@@ -1,20 +1,19 @@
 /**
- * SQLite Database Module
- * Initializes database and provides helper functions
+ * Turso/LibSQL Database Module
+ * Initializes cloud database and provides helper functions
  */
 
-const Database = require('better-sqlite3');
-const path = require('path');
+require('dotenv').config();
+const { createClient } = require('@libsql/client');
 
-// Initialize database
-const dbPath = path.join(__dirname, 'collabspace.db');
-const db = new Database(dbPath);
+// Initialize Turso client
+const db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+});
 
-// Enable foreign keys
-db.pragma('foreign_keys = ON');
-
-// Create tables
-db.exec(`
+// Schema for table creation
+const schema = `
     -- Users
     CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -119,8 +118,49 @@ db.exec(`
         FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE,
         UNIQUE(userId, spaceId)
     );
-`);
+`;
 
-console.log('✅ Database initialized: collabspace.db');
+// Initialize database (run once on startup)
+async function initDatabase() {
+    try {
+        // Execute each CREATE TABLE statement separately
+        const statements = schema.split(';').filter(s => s.trim());
+        for (const stmt of statements) {
+            if (stmt.trim()) {
+                await db.execute(stmt + ';');
+            }
+        }
+        console.log('✅ Database initialized: Turso cloud database');
+    } catch (error) {
+        console.error('❌ Database initialization error:', error);
+        throw error;
+    }
+}
 
-module.exports = db;
+// Helper functions to simplify query syntax
+const query = {
+    // Get a single row
+    get: async (sql, params = []) => {
+        const result = await db.execute({ sql, args: params });
+        return result.rows[0] || null;
+    },
+
+    // Get all rows
+    all: async (sql, params = []) => {
+        const result = await db.execute({ sql, args: params });
+        return result.rows;
+    },
+
+    // Execute a statement (INSERT, UPDATE, DELETE)
+    run: async (sql, params = []) => {
+        const result = await db.execute({ sql, args: params });
+        return { changes: result.rowsAffected, lastInsertRowid: result.lastInsertRowid };
+    },
+
+    // Execute raw SQL
+    exec: async (sql) => {
+        return await db.execute(sql);
+    }
+};
+
+module.exports = { db, query, initDatabase };

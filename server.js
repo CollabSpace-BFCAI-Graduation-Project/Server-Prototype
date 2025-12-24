@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { put, del } = require('@vercel/blob');
-const db = require('./db');
+const { query, initDatabase } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,84 +25,116 @@ app.use('/images', express.static(IMAGES_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ============ AUTH ROUTES ============
-app.post('/api/auth/register', (req, res) => {
-    const { name, username, email, password } = req.body;
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { name, username, email, password } = req.body;
 
-    if (!name || !username || !email || !password) {
-        return res.status(400).json({ error: 'All fields are required' });
+        if (!name || !username || !email || !password) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+            return res.status(400).json({ error: 'Username must be 3-20 chars, lowercase, numbers, underscores only' });
+        }
+
+        // Check existing
+        const existingEmail = await query.get('SELECT id FROM users WHERE email = ?', [email]);
+        if (existingEmail) return res.status(400).json({ error: 'Email already registered' });
+
+        const existingUsername = await query.get('SELECT id FROM users WHERE username = ?', [username]);
+        if (existingUsername) return res.status(400).json({ error: 'Username already taken' });
+
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
+        const newUser = {
+            id: uuidv4(),
+            name,
+            username,
+            email,
+            password,
+            avatarColor: colors[Math.floor(Math.random() * colors.length)],
+            avatarImage: null,
+            bio: '',
+            createdAt: new Date().toISOString()
+        };
+
+        await query.run(
+            'INSERT INTO users (id, name, username, email, password, avatarColor, avatarImage, bio, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [newUser.id, newUser.name, newUser.username, newUser.email, newUser.password, newUser.avatarColor, newUser.avatarImage, newUser.bio, newUser.createdAt]
+        );
+
+        const { password: _, ...userWithoutPassword } = newUser;
+        res.status(201).json(userWithoutPassword);
+    } catch (err) {
+        console.error('Register error:', err);
+        res.status(500).json({ error: 'Registration failed' });
     }
-
-    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
-        return res.status(400).json({ error: 'Username must be 3-20 chars, lowercase, numbers, underscores only' });
-    }
-
-    // Check existing
-    const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (existingEmail) return res.status(400).json({ error: 'Email already registered' });
-
-    const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-    if (existingUsername) return res.status(400).json({ error: 'Username already taken' });
-
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
-    const newUser = {
-        id: uuidv4(),
-        name,
-        username,
-        email,
-        password,
-        avatarColor: colors[Math.floor(Math.random() * colors.length)],
-        avatarImage: null,
-        bio: '',
-        createdAt: new Date().toISOString()
-    };
-
-    db.prepare(`
-        INSERT INTO users (id, name, username, email, password, avatarColor, avatarImage, bio, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(newUser.id, newUser.name, newUser.username, newUser.email, newUser.password, newUser.avatarColor, newUser.avatarImage, newUser.bio, newUser.createdAt);
-
-    const { password: _, ...userWithoutPassword } = newUser;
-    res.status(201).json(userWithoutPassword);
 });
 
-app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND password = ?').get(email, password);
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await query.get('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
 
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const { password: _, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
+        const { password: _, ...userWithoutPassword } = user;
+        res.json(userWithoutPassword);
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'Login failed' });
+    }
 });
 
 // ============ USER ROUTES ============
-app.get('/api/users', (req, res) => {
-    const users = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users').all();
-    res.json(users);
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await query.all('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users');
+        res.json(users);
+    } catch (err) {
+        console.error('Get users error:', err);
+        res.status(500).json({ error: 'Failed to get users' });
+    }
 });
 
-app.get('/api/users/:id', (req, res) => {
-    const user = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const user = await query.get('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?', [req.params.id]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        res.json(user);
+    } catch (err) {
+        console.error('Get user error:', err);
+        res.status(500).json({ error: 'Failed to get user' });
+    }
 });
 
-app.put('/api/users/:id', (req, res) => {
-    const { name, username, email, bio } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const { name, username, email, bio } = req.body;
+        const user = await query.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-    db.prepare('UPDATE users SET name = ?, username = ?, email = ?, bio = ? WHERE id = ?')
-        .run(name || user.name, username || user.username, email || user.email, bio !== undefined ? bio : user.bio, req.params.id);
+        await query.run(
+            'UPDATE users SET name = ?, username = ?, email = ?, bio = ? WHERE id = ?',
+            [name || user.name, username || user.username, email || user.email, bio !== undefined ? bio : user.bio, req.params.id]
+        );
 
-    const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
-    res.json(updated);
+        const updated = await query.get('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?', [req.params.id]);
+        res.json(updated);
+    } catch (err) {
+        console.error('Update user error:', err);
+        res.status(500).json({ error: 'Failed to update user' });
+    }
 });
 
-app.delete('/api/users/:id', (req, res) => {
-    const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'User not found' });
-    res.json({ success: true });
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        const result = await query.run('DELETE FROM users WHERE id = ?', [req.params.id]);
+        if (result.changes === 0) return res.status(404).json({ error: 'User not found' });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete user error:', err);
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
 });
 
 // Avatar upload
@@ -111,7 +143,7 @@ app.post('/api/users/:id/avatar', async (req, res) => {
         const { imageData } = req.body;
         if (!imageData) return res.status(400).json({ error: 'No image data provided' });
 
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        const user = await query.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // Delete old avatar from Vercel Blob if exists
@@ -135,9 +167,9 @@ app.post('/api/users/:id/avatar', async (req, res) => {
         });
 
         // Store blob URL in database
-        db.prepare('UPDATE users SET avatarImage = ? WHERE id = ?').run(blob.url, req.params.id);
+        await query.run('UPDATE users SET avatarImage = ? WHERE id = ?', [blob.url, req.params.id]);
 
-        const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
+        const updated = await query.get('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?', [req.params.id]);
         res.json(updated);
     } catch (err) {
         console.error('Avatar upload error:', err);
@@ -147,7 +179,7 @@ app.post('/api/users/:id/avatar', async (req, res) => {
 
 app.delete('/api/users/:id/avatar', async (req, res) => {
     try {
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        const user = await query.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // Delete from Vercel Blob if exists
@@ -155,8 +187,8 @@ app.delete('/api/users/:id/avatar', async (req, res) => {
             try { await del(user.avatarImage); } catch (e) { /* ignore */ }
         }
 
-        db.prepare('UPDATE users SET avatarImage = NULL WHERE id = ?').run(req.params.id);
-        const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
+        await query.run('UPDATE users SET avatarImage = NULL WHERE id = ?', [req.params.id]);
+        const updated = await query.get('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?', [req.params.id]);
         res.json(updated);
     } catch (err) {
         console.error('Avatar delete error:', err);
@@ -165,119 +197,138 @@ app.delete('/api/users/:id/avatar', async (req, res) => {
 });
 
 // ============ SPACES ROUTES ============
-app.get('/api/spaces', (req, res) => {
-    let spaces;
-    if (req.query.userId) {
-        // Get spaces where user is a member, with owner info
-        spaces = db.prepare(`
-            SELECT s.*, u.name as ownerName
-            FROM spaces s
-            INNER JOIN space_members sm ON s.id = sm.spaceId
-            LEFT JOIN users u ON s.ownerId = u.id
-            WHERE sm.userId = ?
-            ORDER BY s.createdAt DESC
-        `).all(req.query.userId);
-    } else {
-        spaces = db.prepare(`
-            SELECT s.*, u.name as ownerName
-            FROM spaces s
-            LEFT JOIN users u ON s.ownerId = u.id
-            ORDER BY s.createdAt DESC
-        `).all();
+app.get('/api/spaces', async (req, res) => {
+    try {
+        let spaces;
+        if (req.query.userId) {
+            spaces = await query.all(`
+                SELECT s.*, u.name as ownerName
+                FROM spaces s
+                INNER JOIN space_members sm ON s.id = sm.spaceId
+                LEFT JOIN users u ON s.ownerId = u.id
+                WHERE sm.userId = ?
+                ORDER BY s.createdAt DESC
+            `, [req.query.userId]);
+        } else {
+            spaces = await query.all(`
+                SELECT s.*, u.name as ownerName
+                FROM spaces s
+                LEFT JOIN users u ON s.ownerId = u.id
+                ORDER BY s.createdAt DESC
+            `);
+        }
+
+        // Enrich with members and files
+        const enriched = await Promise.all(spaces.map(async space => {
+            const members = await query.all(`
+                SELECT sm.*, u.name, u.username, u.avatarColor, u.avatarImage
+                FROM space_members sm
+                LEFT JOIN users u ON sm.userId = u.id
+                WHERE sm.spaceId = ?
+            `, [space.id]);
+
+            const files = await query.all(`
+                SELECT f.*, u.name as uploaderName
+                FROM files f
+                LEFT JOIN users u ON f.uploadedBy = u.id
+                WHERE f.spaceId = ?
+            `, [space.id]);
+
+            return {
+                ...space,
+                thumbnail: space.thumbnailGradient || space.thumbnailImage,
+                ownerName: space.ownerName || 'Unknown',
+                members: members.map(m => ({
+                    id: m.id,
+                    odId: m.userId,
+                    userId: m.userId,
+                    name: m.name,
+                    username: m.username,
+                    role: m.role,
+                    avatarColor: m.avatarColor,
+                    avatarImage: m.avatarImage,
+                    joinedAt: m.joinedAt
+                })),
+                memberCount: members.length,
+                files,
+                fileCount: files.length
+            };
+        }));
+
+        res.json(enriched);
+    } catch (err) {
+        console.error('Get spaces error:', err);
+        res.status(500).json({ error: 'Failed to get spaces' });
     }
+});
 
-    // Enrich with members and files
-    const enriched = spaces.map(space => {
-        const members = db.prepare(`
-            SELECT sm.*, u.name, u.username, u.avatarColor, u.avatarImage
-            FROM space_members sm
-            LEFT JOIN users u ON sm.userId = u.id
-            WHERE sm.spaceId = ?
-        `).all(space.id);
-
-        const files = db.prepare(`
-            SELECT f.*, u.name as uploaderName
-            FROM files f
-            LEFT JOIN users u ON f.uploadedBy = u.id
-            WHERE f.spaceId = ?
-        `).all(space.id);
-
-        return {
-            ...space,
-            // Map thumbnailGradient to thumbnail for frontend compatibility
-            thumbnail: space.thumbnailGradient || space.thumbnailImage,
-            ownerName: space.ownerName || 'Unknown',
-            members: members.map(m => ({
-                id: m.id,
-                odId: m.userId,
-                userId: m.userId,
-                name: m.name,
-                username: m.username,
-                role: m.role,
-                avatarColor: m.avatarColor,
-                avatarImage: m.avatarImage,
-                joinedAt: m.joinedAt
-            })),
-            memberCount: members.length,
-            files,
-            fileCount: files.length
+app.post('/api/spaces', async (req, res) => {
+    try {
+        const newSpace = {
+            id: uuidv4(),
+            name: req.body.name,
+            thumbnailGradient: req.body.thumbnail || null,
+            thumbnailImage: null,
+            category: req.body.category || 'GENERAL',
+            description: req.body.description || '',
+            ownerId: req.body.ownerId,
+            createdAt: new Date().toISOString()
         };
-    });
 
-    res.json(enriched);
+        await query.run(
+            'INSERT INTO spaces (id, name, thumbnailGradient, thumbnailImage, category, description, ownerId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [newSpace.id, newSpace.name, newSpace.thumbnailGradient, newSpace.thumbnailImage, newSpace.category, newSpace.description, newSpace.ownerId, newSpace.createdAt]
+        );
+
+        // Add owner as member
+        await query.run(
+            'INSERT INTO space_members (id, spaceId, userId, role, joinedAt) VALUES (?, ?, ?, ?, ?)',
+            [uuidv4(), newSpace.id, newSpace.ownerId, 'Owner', newSpace.createdAt]
+        );
+
+        res.status(201).json({ ...newSpace, thumbnail: newSpace.thumbnailGradient });
+    } catch (err) {
+        console.error('Create space error:', err);
+        res.status(500).json({ error: 'Failed to create space' });
+    }
 });
 
-app.post('/api/spaces', (req, res) => {
-    const newSpace = {
-        id: uuidv4(),
-        name: req.body.name,
-        thumbnailGradient: req.body.thumbnail || null,
-        thumbnailImage: null,
-        category: req.body.category || 'GENERAL',
-        description: req.body.description || '',
-        ownerId: req.body.ownerId,
-        createdAt: new Date().toISOString()
-    };
-
-    db.prepare(`
-        INSERT INTO spaces (id, name, thumbnailGradient, thumbnailImage, category, description, ownerId, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(newSpace.id, newSpace.name, newSpace.thumbnailGradient, newSpace.thumbnailImage, newSpace.category, newSpace.description, newSpace.ownerId, newSpace.createdAt);
-
-    // Add owner as member
-    db.prepare(`
-        INSERT INTO space_members (id, spaceId, userId, role, joinedAt)
-        VALUES (?, ?, ?, 'Owner', ?)
-    `).run(uuidv4(), newSpace.id, newSpace.ownerId, newSpace.createdAt);
-
-    res.status(201).json({ ...newSpace, thumbnail: newSpace.thumbnailGradient });
+app.get('/api/spaces/:id', async (req, res) => {
+    try {
+        const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
+        res.json({ ...space, thumbnail: space.thumbnailGradient || space.thumbnailImage });
+    } catch (err) {
+        console.error('Get space error:', err);
+        res.status(500).json({ error: 'Failed to get space' });
+    }
 });
 
-app.get('/api/spaces/:id', (req, res) => {
-    const space = db.prepare('SELECT * FROM spaces WHERE id = ?').get(req.params.id);
-    if (!space) return res.status(404).json({ error: 'Space not found' });
-    res.json({ ...space, thumbnail: space.thumbnailGradient || space.thumbnailImage });
-});
+app.put('/api/spaces/:id', async (req, res) => {
+    try {
+        const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
 
-app.put('/api/spaces/:id', (req, res) => {
-    const space = db.prepare('SELECT * FROM spaces WHERE id = ?').get(req.params.id);
-    if (!space) return res.status(404).json({ error: 'Space not found' });
+        const { name, description, category, thumbnail } = req.body;
+        await query.run(
+            'UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ? WHERE id = ?',
+            [name || space.name, description !== undefined ? description : space.description, category || space.category, thumbnail || space.thumbnailGradient, req.params.id]
+        );
 
-    const { name, description, category, thumbnail } = req.body;
-    db.prepare(`
-        UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ? WHERE id = ?
-    `).run(name || space.name, description !== undefined ? description : space.description, category || space.category, thumbnail || space.thumbnailGradient, req.params.id);
-
-    const updated = db.prepare('SELECT * FROM spaces WHERE id = ?').get(req.params.id);
-    res.json({ ...updated, thumbnail: updated.thumbnailGradient || updated.thumbnailImage });
+        const updated = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
+        res.json({ ...updated, thumbnail: updated.thumbnailGradient || updated.thumbnailImage });
+    } catch (err) {
+        console.error('Update space error:', err);
+        res.status(500).json({ error: 'Failed to update space' });
+    }
 });
 
 app.delete('/api/spaces/:id', async (req, res) => {
     try {
         // Get files first (before cascade deletes them from DB)
-        const files = db.prepare('SELECT downloadUrl FROM files WHERE spaceId = ?').all(req.params.id);
+        const files = await query.all('SELECT downloadUrl FROM files WHERE spaceId = ?', [req.params.id]);
 
-        const result = db.prepare('DELETE FROM spaces WHERE id = ?').run(req.params.id);
+        const result = await query.run('DELETE FROM spaces WHERE id = ?', [req.params.id]);
         if (result.changes === 0) return res.status(404).json({ error: 'Space not found' });
 
         // Delete files from Vercel Blob
@@ -295,287 +346,363 @@ app.delete('/api/spaces/:id', async (req, res) => {
 });
 
 // ============ SPACE MEMBERS ROUTES ============
-app.get('/api/spaces/:spaceId/members', (req, res) => {
-    const members = db.prepare(`
-        SELECT sm.*, u.name, u.username, u.avatarColor, u.avatarImage, u.email
-        FROM space_members sm
-        LEFT JOIN users u ON sm.userId = u.id
-        WHERE sm.spaceId = ?
-    `).all(req.params.spaceId);
-
-    const enriched = members.map(m => ({
-        id: m.id,
-        odId: m.userId,
-        userId: m.userId,
-        name: m.name,
-        username: m.username,
-        email: m.email,
-        role: m.role,
-        avatarColor: m.avatarColor,
-        avatarImage: m.avatarImage,
-        joinedAt: m.joinedAt
-    }));
-
-    res.json(enriched);
-});
-
-app.get('/api/users/:userId/spaces', (req, res) => {
-    const spaces = db.prepare(`
-        SELECT s.* FROM spaces s
-        INNER JOIN space_members sm ON s.id = sm.spaceId
-        WHERE sm.userId = ?
-    `).all(req.params.userId);
-
-    res.json(spaces.map(s => ({ ...s, thumbnail: s.thumbnailGradient || s.thumbnailImage })));
-});
-
-app.post('/api/spaces/:spaceId/members', (req, res) => {
-    const { userId, role } = req.body;
-    const id = uuidv4();
-    const joinedAt = new Date().toISOString();
-
+app.get('/api/spaces/:spaceId/members', async (req, res) => {
     try {
-        db.prepare(`
-            INSERT INTO space_members (id, spaceId, userId, role, joinedAt)
-            VALUES (?, ?, ?, ?, ?)
-        `).run(id, req.params.spaceId, userId, role || 'Member', joinedAt);
+        const members = await query.all(`
+            SELECT sm.*, u.name, u.username, u.avatarColor, u.avatarImage, u.email
+            FROM space_members sm
+            LEFT JOIN users u ON sm.userId = u.id
+            WHERE sm.spaceId = ?
+        `, [req.params.spaceId]);
+
+        const enriched = members.map(m => ({
+            id: m.id,
+            odId: m.userId,
+            userId: m.userId,
+            name: m.name,
+            username: m.username,
+            email: m.email,
+            role: m.role,
+            avatarColor: m.avatarColor,
+            avatarImage: m.avatarImage,
+            joinedAt: m.joinedAt
+        }));
+
+        res.json(enriched);
+    } catch (err) {
+        console.error('Get members error:', err);
+        res.status(500).json({ error: 'Failed to get members' });
+    }
+});
+
+app.get('/api/users/:userId/spaces', async (req, res) => {
+    try {
+        const spaces = await query.all(`
+            SELECT s.* FROM spaces s
+            INNER JOIN space_members sm ON s.id = sm.spaceId
+            WHERE sm.userId = ?
+        `, [req.params.userId]);
+
+        res.json(spaces.map(s => ({ ...s, thumbnail: s.thumbnailGradient || s.thumbnailImage })));
+    } catch (err) {
+        console.error('Get user spaces error:', err);
+        res.status(500).json({ error: 'Failed to get user spaces' });
+    }
+});
+
+app.post('/api/spaces/:spaceId/members', async (req, res) => {
+    try {
+        const { userId, role } = req.body;
+        const id = uuidv4();
+        const joinedAt = new Date().toISOString();
+
+        await query.run(
+            'INSERT INTO space_members (id, spaceId, userId, role, joinedAt) VALUES (?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, userId, role || 'Member', joinedAt]
+        );
         res.status(201).json({ id, spaceId: req.params.spaceId, userId, role: role || 'Member', joinedAt });
     } catch (err) {
         res.status(400).json({ error: 'User already a member' });
     }
 });
 
-app.put('/api/spaces/:spaceId/members/:memberId', (req, res) => {
-    const { role } = req.body;
-    db.prepare('UPDATE space_members SET role = ? WHERE id = ?').run(role, req.params.memberId);
-    res.json({ success: true });
+app.put('/api/spaces/:spaceId/members/:memberId', async (req, res) => {
+    try {
+        const { role } = req.body;
+        await query.run('UPDATE space_members SET role = ? WHERE id = ?', [role, req.params.memberId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Update member error:', err);
+        res.status(500).json({ error: 'Failed to update member' });
+    }
 });
 
-app.delete('/api/spaces/:spaceId/members/:memberId', (req, res) => {
-    db.prepare('DELETE FROM space_members WHERE id = ?').run(req.params.memberId);
-    res.json({ success: true });
+app.delete('/api/spaces/:spaceId/members/:memberId', async (req, res) => {
+    try {
+        await query.run('DELETE FROM space_members WHERE id = ?', [req.params.memberId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete member error:', err);
+        res.status(500).json({ error: 'Failed to delete member' });
+    }
 });
 
-app.post('/api/spaces/:spaceId/leave', (req, res) => {
-    const { userId } = req.body;
-    db.prepare('DELETE FROM space_members WHERE spaceId = ? AND userId = ?').run(req.params.spaceId, userId);
-    res.json({ success: true });
+app.post('/api/spaces/:spaceId/leave', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        await query.run('DELETE FROM space_members WHERE spaceId = ? AND userId = ?', [req.params.spaceId, userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Leave space error:', err);
+        res.status(500).json({ error: 'Failed to leave space' });
+    }
 });
 
 // ============ INVITE ROUTES ============
-app.post('/api/spaces/:spaceId/invite', (req, res) => {
-    const { emails, inviterId, inviterName } = req.body;
-    if (!emails || !Array.isArray(emails)) return res.status(400).json({ error: 'Emails required' });
+app.post('/api/spaces/:spaceId/invite', async (req, res) => {
+    try {
+        const { emails, inviterId, inviterName } = req.body;
+        if (!emails || !Array.isArray(emails)) return res.status(400).json({ error: 'Emails required' });
 
-    const space = db.prepare('SELECT name FROM spaces WHERE id = ?').get(req.params.spaceId);
-    if (!space) return res.status(404).json({ error: 'Space not found' });
+        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
 
-    let invited = 0;
-    emails.forEach(email => {
-        const user = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email);
-        if (!user) return;
+        let invited = 0;
+        for (const email of emails) {
+            const user = await query.get('SELECT id FROM users WHERE LOWER(email) = LOWER(?)', [email]);
+            if (!user) continue;
 
-        // Check if already member
-        const isMember = db.prepare('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?').get(req.params.spaceId, user.id);
-        if (isMember) return;
+            // Check if already member
+            const isMember = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [req.params.spaceId, user.id]);
+            if (isMember) continue;
 
-        // Check if already invited
-        const hasInvite = db.prepare('SELECT id FROM space_invites WHERE spaceId = ? AND userId = ? AND status = ?').get(req.params.spaceId, user.id, 'pending');
-        if (hasInvite) return;
+            // Check if already invited
+            const hasInvite = await query.get('SELECT id FROM space_invites WHERE spaceId = ? AND userId = ? AND status = ?', [req.params.spaceId, user.id, 'pending']);
+            if (hasInvite) continue;
 
-        const inviteId = uuidv4();
-        db.prepare(`
-            INSERT INTO space_invites (id, spaceId, userId, inviterId, status, createdAt)
-            VALUES (?, ?, ?, ?, 'pending', ?)
-        `).run(inviteId, req.params.spaceId, user.id, inviterId, new Date().toISOString());
+            const inviteId = uuidv4();
+            await query.run(
+                'INSERT INTO space_invites (id, spaceId, userId, inviterId, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+                [inviteId, req.params.spaceId, user.id, inviterId, 'pending', new Date().toISOString()]
+            );
 
-        // Create notification
-        db.prepare(`
-            INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt)
-            VALUES (?, ?, 'invite', ?, 'space', ?, ?, 0, ?)
-        `).run(uuidv4(), user.id, inviterId, req.params.spaceId, `${inviterName || 'Someone'} invited you to join ${space.name}`, new Date().toISOString());
+            // Create notification
+            await query.run(
+                'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [uuidv4(), user.id, 'invite', inviterId, 'space', req.params.spaceId, `${inviterName || 'Someone'} invited you to join ${space.name}`, 0, new Date().toISOString()]
+            );
 
-        invited++;
-    });
+            invited++;
+        }
 
-    res.json({ success: true, invited });
+        res.json({ success: true, invited });
+    } catch (err) {
+        console.error('Invite error:', err);
+        res.status(500).json({ error: 'Failed to send invites' });
+    }
 });
 
-app.get('/api/users/:userId/invites', (req, res) => {
-    const invites = db.prepare(`
-        SELECT si.*, s.name as spaceName, u.name as inviterName
-        FROM space_invites si
-        LEFT JOIN spaces s ON si.spaceId = s.id
-        LEFT JOIN users u ON si.inviterId = u.id
-        WHERE si.userId = ? AND si.status = 'pending'
-    `).all(req.params.userId);
-    res.json(invites);
+app.get('/api/users/:userId/invites', async (req, res) => {
+    try {
+        const invites = await query.all(`
+            SELECT si.*, s.name as spaceName, u.name as inviterName
+            FROM space_invites si
+            LEFT JOIN spaces s ON si.spaceId = s.id
+            LEFT JOIN users u ON si.inviterId = u.id
+            WHERE si.userId = ? AND si.status = 'pending'
+        `, [req.params.userId]);
+        res.json(invites);
+    } catch (err) {
+        console.error('Get invites error:', err);
+        res.status(500).json({ error: 'Failed to get invites' });
+    }
 });
 
-app.post('/api/invites/:inviteId/accept', (req, res) => {
-    const invite = db.prepare('SELECT * FROM space_invites WHERE id = ?').get(req.params.inviteId);
-    if (!invite) return res.status(404).json({ error: 'Invite not found' });
-    if (invite.status !== 'pending') return res.status(400).json({ error: 'Invite already processed' });
+app.post('/api/invites/:inviteId/accept', async (req, res) => {
+    try {
+        const invite = await query.get('SELECT * FROM space_invites WHERE id = ?', [req.params.inviteId]);
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+        if (invite.status !== 'pending') return res.status(400).json({ error: 'Invite already processed' });
 
-    // Update invite
-    db.prepare('UPDATE space_invites SET status = ?, respondedAt = ? WHERE id = ?')
-        .run('accepted', new Date().toISOString(), req.params.inviteId);
+        // Update invite
+        await query.run('UPDATE space_invites SET status = ?, respondedAt = ? WHERE id = ?', ['accepted', new Date().toISOString(), req.params.inviteId]);
 
-    // Add as member
-    db.prepare(`
-        INSERT INTO space_members (id, spaceId, userId, role, joinedAt)
-        VALUES (?, ?, ?, 'Member', ?)
-    `).run(uuidv4(), invite.spaceId, invite.userId, new Date().toISOString());
+        // Add as member
+        await query.run(
+            'INSERT INTO space_members (id, spaceId, userId, role, joinedAt) VALUES (?, ?, ?, ?, ?)',
+            [uuidv4(), invite.spaceId, invite.userId, 'Member', new Date().toISOString()]
+        );
 
-    // Notify inviter
-    const space = db.prepare('SELECT name FROM spaces WHERE id = ?').get(invite.spaceId);
-    const user = db.prepare('SELECT name FROM users WHERE id = ?').get(invite.userId);
-    db.prepare(`
-        INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt)
-        VALUES (?, ?, 'system', ?, 'space', ?, ?, 0, ?)
-    `).run(uuidv4(), invite.inviterId, invite.userId, invite.spaceId, `${user?.name || 'Someone'} accepted your invite to join ${space?.name || 'a space'}`, new Date().toISOString());
+        // Notify inviter
+        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [invite.spaceId]);
+        const user = await query.get('SELECT name FROM users WHERE id = ?', [invite.userId]);
+        await query.run(
+            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [uuidv4(), invite.inviterId, 'system', invite.userId, 'space', invite.spaceId, `${user?.name || 'Someone'} accepted your invite to join ${space?.name || 'a space'}`, 0, new Date().toISOString()]
+        );
 
-    res.json({ success: true });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Accept invite error:', err);
+        res.status(500).json({ error: 'Failed to accept invite' });
+    }
 });
 
-app.post('/api/invites/:inviteId/decline', (req, res) => {
-    db.prepare('UPDATE space_invites SET status = ?, respondedAt = ? WHERE id = ?')
-        .run('declined', new Date().toISOString(), req.params.inviteId);
-    res.json({ success: true });
+app.post('/api/invites/:inviteId/decline', async (req, res) => {
+    try {
+        await query.run('UPDATE space_invites SET status = ?, respondedAt = ? WHERE id = ?', ['declined', new Date().toISOString(), req.params.inviteId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Decline invite error:', err);
+        res.status(500).json({ error: 'Failed to decline invite' });
+    }
 });
 
 // ============ NOTIFICATIONS ROUTES ============
-app.get('/api/notifications', (req, res) => {
-    let notifications;
-    if (req.query.userId) {
-        notifications = db.prepare(`
-            SELECT n.*, u.name as actorName, u.avatarColor as actorAvatarColor, u.avatarImage as actorAvatarImage
-            FROM notifications n
-            LEFT JOIN users u ON n.actorId = u.id
-            WHERE n.userId = ?
-            ORDER BY n.createdAt DESC
-        `).all(req.query.userId);
-    } else {
-        notifications = db.prepare('SELECT * FROM notifications ORDER BY createdAt DESC').all();
-    }
-
-    // Transform for frontend compatibility
-    const transformed = notifications.map(n => {
-        // For invite notifications, look up the actual invite ID
-        let inviteId = null;
-        if (n.type === 'invite' && n.targetType === 'space') {
-            const invite = db.prepare(
-                'SELECT id FROM space_invites WHERE spaceId = ? AND userId = ? AND status = ?'
-            ).get(n.targetId, n.userId, 'pending');
-            inviteId = invite?.id || null;
+app.get('/api/notifications', async (req, res) => {
+    try {
+        let notifications;
+        if (req.query.userId) {
+            notifications = await query.all(`
+                SELECT n.*, u.name as actorName, u.avatarColor as actorAvatarColor, u.avatarImage as actorAvatarImage
+                FROM notifications n
+                LEFT JOIN users u ON n.actorId = u.id
+                WHERE n.userId = ?
+                ORDER BY n.createdAt DESC
+            `, [req.query.userId]);
+        } else {
+            notifications = await query.all('SELECT * FROM notifications ORDER BY createdAt DESC');
         }
 
-        return {
-            id: n.id,
-            userId: n.userId,
-            type: n.type,
-            author: n.actorName || 'System',
-            text: n.message,
-            target: '',
-            spaceId: n.targetType === 'space' ? n.targetId : null,
-            inviteId: inviteId,
-            action: n.type === 'invite' ? 'View Invite' : null,
-            read: !!n.read,
-            createdAt: n.createdAt
-        };
-    });
+        // Transform for frontend compatibility
+        const transformed = await Promise.all(notifications.map(async n => {
+            // For invite notifications, look up the actual invite ID
+            let inviteId = null;
+            if (n.type === 'invite' && n.targetType === 'space') {
+                const invite = await query.get('SELECT id FROM space_invites WHERE spaceId = ? AND userId = ? AND status = ?', [n.targetId, n.userId, 'pending']);
+                inviteId = invite?.id || null;
+            }
 
-    res.json(transformed);
+            return {
+                id: n.id,
+                userId: n.userId,
+                type: n.type,
+                author: n.actorName || 'System',
+                text: n.message,
+                target: '',
+                spaceId: n.targetType === 'space' ? n.targetId : null,
+                inviteId: inviteId,
+                action: n.type === 'invite' ? 'View Invite' : null,
+                read: !!n.read,
+                createdAt: n.createdAt
+            };
+        }));
+
+        res.json(transformed);
+    } catch (err) {
+        console.error('Get notifications error:', err);
+        res.status(500).json({ error: 'Failed to get notifications' });
+    }
 });
 
-app.post('/api/notifications', (req, res) => {
-    const { userId, type, actorId, targetType, targetId, message } = req.body;
-    const id = uuidv4();
-    db.prepare(`
-        INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-    `).run(id, userId, type, actorId, targetType, targetId, message, new Date().toISOString());
-    res.status(201).json({ id });
+app.post('/api/notifications', async (req, res) => {
+    try {
+        const { userId, type, actorId, targetType, targetId, message } = req.body;
+        const id = uuidv4();
+        await query.run(
+            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, userId, type, actorId, targetType, targetId, message, 0, new Date().toISOString()]
+        );
+        res.status(201).json({ id });
+    } catch (err) {
+        console.error('Create notification error:', err);
+        res.status(500).json({ error: 'Failed to create notification' });
+    }
 });
 
-app.put('/api/notifications/:id/read', (req, res) => {
-    db.prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(req.params.id);
-    res.json({ success: true });
+app.put('/api/notifications/:id/read', async (req, res) => {
+    try {
+        await query.run('UPDATE notifications SET read = 1 WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Mark read error:', err);
+        res.status(500).json({ error: 'Failed to mark as read' });
+    }
 });
 
-app.put('/api/notifications/read-all', (req, res) => {
-    db.prepare('UPDATE notifications SET read = 1').run();
-    res.json({ success: true });
+app.put('/api/notifications/read-all', async (req, res) => {
+    try {
+        await query.run('UPDATE notifications SET read = 1');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Mark all read error:', err);
+        res.status(500).json({ error: 'Failed to mark all as read' });
+    }
 });
 
 // ============ MESSAGES ROUTES ============
-app.get('/api/messages/:spaceId', (req, res) => {
-    const messages = db.prepare(`
-        SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage
-        FROM messages m
-        LEFT JOIN users u ON m.senderId = u.id
-        WHERE m.spaceId = ?
-        ORDER BY m.createdAt ASC
-    `).all(req.params.spaceId);
+app.get('/api/messages/:spaceId', async (req, res) => {
+    try {
+        const messages = await query.all(`
+            SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage
+            FROM messages m
+            LEFT JOIN users u ON m.senderId = u.id
+            WHERE m.spaceId = ?
+            ORDER BY m.createdAt ASC
+        `, [req.params.spaceId]);
 
-    const transformed = messages.map(m => ({
-        id: m.id,
-        spaceId: m.spaceId,
-        senderId: m.senderId,
-        sender: m.type === 'system' ? 'System' : (m.senderName || 'Unknown User'),
-        text: m.text,
-        type: m.type,
-        mentions: m.mentions ? JSON.parse(m.mentions) : [],
-        time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        createdAt: m.createdAt,
-        avatarColor: m.avatarColor || '#9ca3af',
-        avatarImage: m.avatarImage ? `http://localhost:${PORT}${m.avatarImage}` : null
-    }));
+        const transformed = messages.map(m => ({
+            id: m.id,
+            spaceId: m.spaceId,
+            senderId: m.senderId,
+            sender: m.type === 'system' ? 'System' : (m.senderName || 'Unknown User'),
+            text: m.text,
+            type: m.type,
+            mentions: m.mentions ? JSON.parse(m.mentions) : [],
+            time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            createdAt: m.createdAt,
+            avatarColor: m.avatarColor || '#9ca3af',
+            avatarImage: m.avatarImage
+        }));
 
-    res.json(transformed);
+        res.json(transformed);
+    } catch (err) {
+        console.error('Get messages error:', err);
+        res.status(500).json({ error: 'Failed to get messages' });
+    }
 });
 
-app.post('/api/messages/:spaceId', (req, res) => {
-    const { senderId, text, type, mentions } = req.body;
-    const id = uuidv4();
-    const createdAt = new Date().toISOString();
+app.post('/api/messages/:spaceId', async (req, res) => {
+    try {
+        const { senderId, text, type, mentions } = req.body;
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
 
-    db.prepare(`
-        INSERT INTO messages (id, spaceId, senderId, text, type, mentions, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, req.params.spaceId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, createdAt);
+        await query.run(
+            'INSERT INTO messages (id, spaceId, senderId, text, type, mentions, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, createdAt]
+        );
 
-    const sender = db.prepare('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?').get(senderId);
-    res.status(201).json({
-        id,
-        spaceId: req.params.spaceId,
-        senderId,
-        sender: sender?.name || 'User',
-        text,
-        type: type || 'user',
-        mentions: mentions || [],
-        time: new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        createdAt,
-        avatarColor: sender?.avatarColor || '#ec4899',
-        avatarImage: sender?.avatarImage
-    });
+        const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
+        res.status(201).json({
+            id,
+            spaceId: req.params.spaceId,
+            senderId,
+            sender: sender?.name || 'User',
+            text,
+            type: type || 'user',
+            mentions: mentions || [],
+            time: new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            createdAt,
+            avatarColor: sender?.avatarColor || '#ec4899',
+            avatarImage: sender?.avatarImage
+        });
+    } catch (err) {
+        console.error('Send message error:', err);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
 });
 
 // ============ FILES ROUTES ============
-app.get('/api/files/:spaceId', (req, res) => {
-    const files = db.prepare(`
-        SELECT f.*, u.name as uploaderName
-        FROM files f
-        LEFT JOIN users u ON f.uploadedBy = u.id
-        WHERE f.spaceId = ?
-    `).all(req.params.spaceId);
+app.get('/api/files/:spaceId', async (req, res) => {
+    try {
+        const files = await query.all(`
+            SELECT f.*, u.name as uploaderName
+            FROM files f
+            LEFT JOIN users u ON f.uploadedBy = u.id
+            WHERE f.spaceId = ?
+        `, [req.params.spaceId]);
 
-    const enriched = files.map(f => ({
-        ...f,
-        uploaderName: f.uploaderName || 'Unknown User'
-    }));
+        const enriched = files.map(f => ({
+            ...f,
+            uploaderName: f.uploaderName || 'Unknown User'
+        }));
 
-    res.json(enriched);
+        res.json(enriched);
+    } catch (err) {
+        console.error('Get files error:', err);
+        res.status(500).json({ error: 'Failed to get files' });
+    }
 });
 
 app.post('/api/files/:spaceId', async (req, res) => {
@@ -606,10 +733,10 @@ app.post('/api/files/:spaceId', async (req, res) => {
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
-        db.prepare(`
-            INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, req.params.spaceId, name, blobFilename, extension.toUpperCase(), mimeType, size, uploadedBy, blob.url, createdAt);
+        await query.run(
+            'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, name, blobFilename, extension.toUpperCase(), mimeType, size, uploadedBy, blob.url, createdAt]
+        );
 
         res.status(201).json({ id, spaceId: req.params.spaceId, name, storedFilename: blobFilename, type: extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl: blob.url, createdAt });
     } catch (err) {
@@ -618,12 +745,17 @@ app.post('/api/files/:spaceId', async (req, res) => {
     }
 });
 
-app.get('/api/files/:fileId/download', (req, res) => {
-    const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.fileId);
-    if (!file || !file.downloadUrl) return res.status(404).json({ error: 'File not found' });
+app.get('/api/files/:fileId/download', async (req, res) => {
+    try {
+        const file = await query.get('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
+        if (!file || !file.downloadUrl) return res.status(404).json({ error: 'File not found' });
 
-    // Redirect to Vercel Blob URL for download
-    res.redirect(file.downloadUrl);
+        // Redirect to Vercel Blob URL for download
+        res.redirect(file.downloadUrl);
+    } catch (err) {
+        console.error('File download error:', err);
+        res.status(500).json({ error: 'Failed to download file' });
+    }
 });
 
 app.delete('/api/files/:fileId', async (req, res) => {
@@ -631,12 +763,12 @@ app.delete('/api/files/:fileId', async (req, res) => {
         const { userId } = req.body;
         if (!userId) return res.status(400).json({ error: 'User ID required' });
 
-        const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.fileId);
+        const file = await query.get('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
         if (!file) return res.status(404).json({ error: 'File not found' });
 
         // Permission check
-        const space = db.prepare('SELECT ownerId FROM spaces WHERE id = ?').get(file.spaceId);
-        const membership = db.prepare('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?').get(file.spaceId, userId);
+        const space = await query.get('SELECT ownerId FROM spaces WHERE id = ?', [file.spaceId]);
+        const membership = await query.get('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?', [file.spaceId, userId]);
 
         const isUploader = file.uploadedBy === userId;
         const isOwner = space?.ownerId === userId;
@@ -651,7 +783,7 @@ app.delete('/api/files/:fileId', async (req, res) => {
             try { await del(file.downloadUrl); } catch (e) { /* ignore */ }
         }
 
-        db.prepare('DELETE FROM files WHERE id = ?').run(req.params.fileId);
+        await query.run('DELETE FROM files WHERE id = ?', [req.params.fileId]);
         res.json({ success: true });
     } catch (err) {
         console.error('File delete error:', err);
@@ -660,41 +792,66 @@ app.delete('/api/files/:fileId', async (req, res) => {
 });
 
 // ============ FAVORITES ROUTES ============
-app.get('/api/users/:userId/favorites', (req, res) => {
-    const favorites = db.prepare('SELECT spaceId FROM user_favorites WHERE userId = ?').all(req.params.userId);
-    res.json(favorites.map(f => f.spaceId));
+app.get('/api/users/:userId/favorites', async (req, res) => {
+    try {
+        const favorites = await query.all('SELECT spaceId FROM user_favorites WHERE userId = ?', [req.params.userId]);
+        res.json(favorites.map(f => f.spaceId));
+    } catch (err) {
+        console.error('Get favorites error:', err);
+        res.status(500).json({ error: 'Failed to get favorites' });
+    }
 });
 
-app.post('/api/users/:userId/favorites/:spaceId', (req, res) => {
+app.post('/api/users/:userId/favorites/:spaceId', async (req, res) => {
     try {
-        db.prepare(`
-            INSERT INTO user_favorites (id, userId, spaceId, createdAt)
-            VALUES (?, ?, ?, ?)
-        `).run(uuidv4(), req.params.userId, req.params.spaceId, new Date().toISOString());
+        await query.run(
+            'INSERT INTO user_favorites (id, userId, spaceId, createdAt) VALUES (?, ?, ?, ?)',
+            [uuidv4(), req.params.userId, req.params.spaceId, new Date().toISOString()]
+        );
         res.json({ success: true });
     } catch {
         res.json({ success: true }); // Already exists
     }
 });
 
-app.delete('/api/users/:userId/favorites/:spaceId', (req, res) => {
-    db.prepare('DELETE FROM user_favorites WHERE userId = ? AND spaceId = ?').run(req.params.userId, req.params.spaceId);
-    res.json({ success: true });
+app.delete('/api/users/:userId/favorites/:spaceId', async (req, res) => {
+    try {
+        await query.run('DELETE FROM user_favorites WHERE userId = ? AND spaceId = ?', [req.params.userId, req.params.spaceId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete favorite error:', err);
+        res.status(500).json({ error: 'Failed to delete favorite' });
+    }
 });
 
-app.post('/api/users/:userId/favorites/:spaceId/toggle', (req, res) => {
-    const existing = db.prepare('SELECT id FROM user_favorites WHERE userId = ? AND spaceId = ?').get(req.params.userId, req.params.spaceId);
-    if (existing) {
-        db.prepare('DELETE FROM user_favorites WHERE id = ?').run(existing.id);
-        res.json({ isFavorite: false });
-    } else {
-        db.prepare(`INSERT INTO user_favorites (id, userId, spaceId, createdAt) VALUES (?, ?, ?, ?)`).run(uuidv4(), req.params.userId, req.params.spaceId, new Date().toISOString());
-        res.json({ isFavorite: true });
+app.post('/api/users/:userId/favorites/:spaceId/toggle', async (req, res) => {
+    try {
+        const existing = await query.get('SELECT id FROM user_favorites WHERE userId = ? AND spaceId = ?', [req.params.userId, req.params.spaceId]);
+        if (existing) {
+            await query.run('DELETE FROM user_favorites WHERE id = ?', [existing.id]);
+            res.json({ isFavorite: false });
+        } else {
+            await query.run('INSERT INTO user_favorites (id, userId, spaceId, createdAt) VALUES (?, ?, ?, ?)', [uuidv4(), req.params.userId, req.params.spaceId, new Date().toISOString()]);
+            res.json({ isFavorite: true });
+        }
+    } catch (err) {
+        console.error('Toggle favorite error:', err);
+        res.status(500).json({ error: 'Failed to toggle favorite' });
     }
 });
 
 // ============ START SERVER ============
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📦 Using SQLite database: collabspace.db`);
-});
+async function startServer() {
+    try {
+        await initDatabase();
+        app.listen(PORT, () => {
+            console.log(`🚀 Server running on http://localhost:${PORT}`);
+            console.log(`☁️  Using Turso cloud database`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+}
+
+startServer();

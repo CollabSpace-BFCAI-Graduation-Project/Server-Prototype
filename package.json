@@ -8,6 +8,7 @@
         "dev": "nodemon server.js"
     },
     "dependencies": {
+        "@libsql/client": "^0.15.15",
         "@vercel/blob": "^2.0.0",
         "better-sqlite3": "^12.5.0",
         "cors": "^2.8.5",
