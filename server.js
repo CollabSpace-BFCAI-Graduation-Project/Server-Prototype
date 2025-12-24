@@ -24,6 +24,32 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/images', express.static(IMAGES_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// ============ PASSWORD VALIDATION ============
+function validatePassword(password) {
+    const errors = [];
+
+    if (!password || password.length < 8) {
+        errors.push('Password must be at least 8 characters');
+    }
+    if (password.length > 128) {
+        errors.push('Password must be less than 128 characters');
+    }
+    if (!/[A-Z]/.test(password)) {
+        errors.push('Password must contain an uppercase letter');
+    }
+    if (!/[a-z]/.test(password)) {
+        errors.push('Password must contain a lowercase letter');
+    }
+    if (!/[0-9]/.test(password)) {
+        errors.push('Password must contain a number');
+    }
+    if (!/[@!#$%&*\-_+=?.]/.test(password)) {
+        errors.push('Password must contain a special character (@!#$%&*-_+=?.)');
+    }
+
+    return errors;
+}
+
 // ============ AUTH ROUTES ============
 app.post('/api/auth/register', async (req, res) => {
     try {
@@ -35,6 +61,15 @@ app.post('/api/auth/register', async (req, res) => {
 
         if (!/^[a-z0-9_]{3,20}$/.test(username)) {
             return res.status(400).json({ error: 'Username must be 3-20 chars, lowercase, numbers, underscores only' });
+        }
+
+        // Validate password strength
+        const passwordErrors = validatePassword(password);
+        if (passwordErrors.length > 0) {
+            return res.status(400).json({
+                error: 'Password does not meet requirements',
+                passwordErrors
+            });
         }
 
         // Check existing
