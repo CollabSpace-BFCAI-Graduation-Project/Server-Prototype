@@ -727,7 +727,8 @@ app.post('/api/files/:spaceId', async (req, res) => {
         // Upload to Vercel Blob
         const blob = await put(blobFilename, buffer, {
             access: 'public',
-            contentType: mimeType
+            contentType: mimeType,
+            contentDisposition: `attachment; filename="${name}"`
         });
 
         const id = uuidv4();
@@ -750,8 +751,32 @@ app.get('/api/files/:fileId/download', async (req, res) => {
         const file = await query.get('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
         if (!file || !file.downloadUrl) return res.status(404).json({ error: 'File not found' });
 
-        // Redirect to Vercel Blob URL for download
-        res.redirect(file.downloadUrl);
+        // Proxy the download to force correct headers
+        const response = await fetch(file.downloadUrl);
+        if (!response.ok) throw new Error(`Failed to fetch file: ${response.statusText}`);
+
+        res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+        res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+
+        // Pipe the body stream to the response
+        const { Readable } = require('stream');
+        // Convert web stream to node stream
+        if (response.body) {
+            const reader = response.body.getReader();
+            const stream = new Readable({
+                async read() {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        this.push(null);
+                    } else {
+                        this.push(Buffer.from(value));
+                    }
+                }
+            });
+            stream.pipe(res);
+        } else {
+            res.end();
+        }
     } catch (err) {
         console.error('File download error:', err);
         res.status(500).json({ error: 'Failed to download file' });
