@@ -136,6 +136,36 @@ app.post('/api/auth/register', async (req, res) => {
         res.status(500).json({ error: 'Registration failed' });
     }
 });
+// ============ ACCOUNT LOCKOUT CONFIG ============
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOCKOUT_DURATION_MS = 60 * 10; // 1 minute
+const UNLOCK_INSTRUCTIONS_FILE = path.join(__dirname, 'unlock_instructions.json');
+
+// Helper to save unlock instructions to JSON file (simulates email)
+function saveUnlockInstructions(user, unlockTime) {
+    let instructions = [];
+    if (fs.existsSync(UNLOCK_INSTRUCTIONS_FILE)) {
+        try {
+            instructions = JSON.parse(fs.readFileSync(UNLOCK_INSTRUCTIONS_FILE, 'utf8'));
+        } catch (e) {
+            instructions = [];
+        }
+    }
+
+    instructions.push({
+        userId: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        lockedAt: new Date().toISOString(),
+        unlockAt: unlockTime,
+        message: `Your account has been temporarily locked due to too many failed login attempts. It will be automatically unlocked at ${new Date(unlockTime).toLocaleString()}. If this wasn't you, please reset your password immediately.`,
+        resetLink: `/reset-password?email=${encodeURIComponent(user.email)}`
+    });
+
+    fs.writeFileSync(UNLOCK_INSTRUCTIONS_FILE, JSON.stringify(instructions, null, 2));
+    console.log(`📧 Unlock instructions saved for ${user.email}`);
+}
 
 app.post('/api/auth/login', async (req, res) => {
     try {
@@ -145,15 +175,94 @@ app.post('/api/auth/login', async (req, res) => {
         email = email?.trim() || '';
         const emailNormalized = normalizeEmail(email);
 
-        // Try to find user by normalized email or original email (for backwards compat)
+        // First, find user by email only (to check lockout status)
         const user = await query.get(
-            'SELECT * FROM users WHERE (emailNormalized = ? OR email = ?) AND password = ?',
-            [emailNormalized, email.toLowerCase(), password]
+            'SELECT * FROM users WHERE emailNormalized = ? OR email = ?',
+            [emailNormalized, email.toLowerCase()]
         );
 
-        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        // If user doesn't exist, return generic error (anti-enumeration)
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
 
-        const { password: _, emailNormalized: __, usernameNormalized: ___, ...userWithoutSensitive } = user;
+        // Check if account is locked
+        if (user.lockedUntil) {
+            const lockExpiry = new Date(user.lockedUntil).getTime();
+            const now = Date.now();
+
+            if (now < lockExpiry) {
+                const remainingMs = lockExpiry - now;
+                const remainingSecs = Math.ceil(remainingMs / 1000);
+                return res.status(423).json({
+                    error: 'Account temporarily locked',
+                    message: `Too many failed attempts. Try again in ${remainingSecs} seconds.`,
+                    lockedUntil: user.lockedUntil,
+                    retryAfter: remainingSecs
+                });
+            } else {
+                // Lock expired, reset counters
+                await query.run(
+                    'UPDATE users SET failedLoginAttempts = 0, lockedUntil = NULL WHERE id = ?',
+                    [user.id]
+                );
+            }
+        }
+
+        // Check password
+        if (user.password !== password) {
+            // Increment failed attempts
+            const newAttempts = (user.failedLoginAttempts || 0) + 1;
+
+            if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+                // Lock the account
+                const unlockTime = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+                await query.run(
+                    'UPDATE users SET failedLoginAttempts = ?, lockedUntil = ?, lastFailedLoginAt = ? WHERE id = ?',
+                    [newAttempts, unlockTime, new Date().toISOString(), user.id]
+                );
+
+                // Save unlock instructions (simulate email)
+                saveUnlockInstructions(user, unlockTime);
+
+                return res.status(423).json({
+                    error: 'Account locked',
+                    message: 'Too many failed attempts. Account locked for 1 minute. Check your email for unlock instructions.',
+                    lockedUntil: unlockTime
+                });
+            } else {
+                // Just increment counter
+                await query.run(
+                    'UPDATE users SET failedLoginAttempts = ?, lastFailedLoginAt = ? WHERE id = ?',
+                    [newAttempts, new Date().toISOString(), user.id]
+                );
+
+                const remainingAttempts = MAX_LOGIN_ATTEMPTS - newAttempts;
+                const lockoutMinutes = Math.ceil(LOCKOUT_DURATION_MS / 60000);
+
+                // Build response with warning if 3 or fewer attempts remaining
+                const response = {
+                    error: 'Invalid credentials',
+                    remainingAttempts
+                };
+
+                if (remainingAttempts <= 3) {
+                    response.warning = true;
+                    response.message = `⚠️ Warning: Only ${remainingAttempts} attempt${remainingAttempts === 1 ? '' : 's'} remaining! Your account will be locked for ${lockoutMinutes} minute${lockoutMinutes === 1 ? '' : 's'} after ${remainingAttempts} more failed attempt${remainingAttempts === 1 ? '' : 's'}.`;
+                    response.lockoutDuration = lockoutMinutes;
+                }
+
+                return res.status(401).json(response);
+            }
+        }
+
+        // Success! Reset failed attempts
+        await query.run(
+            'UPDATE users SET failedLoginAttempts = 0, lockedUntil = NULL, lastFailedLoginAt = NULL WHERE id = ?',
+            [user.id]
+        );
+
+        const { password: _, emailNormalized: __, usernameNormalized: ___, failedLoginAttempts: ____, lockedUntil: _____, lastFailedLoginAt: ______, ...userWithoutSensitive } = user;
         res.json(userWithoutSensitive);
     } catch (err) {
         console.error('Login error:', err);

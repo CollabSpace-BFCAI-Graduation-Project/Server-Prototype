@@ -113,23 +113,28 @@ async function initDatabase() {
                 console.log(`📦 Applying migration: ${file}`);
                 const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
-                // Split by semi-colon to handle multiple statements
-                const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
+                // Strip SQL comments and split by semi-colon
+                const sqlWithoutComments = sql
+                    .split('\n')
+                    .map(line => line.replace(/--.*$/, '').trim()) // Remove -- comments
+                    .join('\n');
+
+                const statements = sqlWithoutComments
+                    .split(';')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
 
                 for (const stmt of statements) {
-                    const trimmedStmt = stmt.trim();
-                    if (trimmedStmt) {
-                        try {
-                            await query.exec(trimmedStmt + ';');
-                            console.log(`   ✓ ${trimmedStmt.slice(0, 50)}...`);
-                        } catch (stmtErr) {
-                            // Ignore "duplicate column" errors for ALTER TABLE ADD COLUMN
-                            if (stmtErr.message && stmtErr.message.includes('duplicate column')) {
-                                console.log(`   ⏭ Column already exists, skipping`);
-                            } else {
-                                console.error(`   ✗ Statement failed: ${stmtErr.message}`);
-                                throw stmtErr;
-                            }
+                    try {
+                        await query.exec(stmt + ';');
+                        console.log(`   ✓ ${stmt.slice(0, 50).replace(/\n/g, ' ')}...`);
+                    } catch (stmtErr) {
+                        // Ignore "duplicate column" errors for ALTER TABLE ADD COLUMN
+                        if (stmtErr.message && stmtErr.message.includes('duplicate column')) {
+                            console.log(`   ⏭ Column already exists, skipping`);
+                        } else {
+                            console.error(`   ✗ Statement failed: ${stmtErr.message}`);
+                            throw stmtErr;
                         }
                     }
                 }
