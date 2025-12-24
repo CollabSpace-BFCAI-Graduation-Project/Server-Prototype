@@ -84,7 +84,10 @@ if (DB_PROVIDER === 'turso') {
 async function initDatabase() {
     try {
         const migrationsDir = path.join(__dirname, 'migrations');
-        if (!fs.existsSync(migrationsDir)) return;
+        if (!fs.existsSync(migrationsDir)) {
+            console.log('⚠️ No migrations directory found');
+            return;
+        }
 
         // Create migrations table if not exists
         await query.exec(`
@@ -110,22 +113,33 @@ async function initDatabase() {
                 console.log(`📦 Applying migration: ${file}`);
                 const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
-                // Split by semi-colon to handle multiple statements if provider requires it
-                // Turso/LibSQL execute() handles single statements better usually, but local exec() handles script.
-                // For safety/compatibility, we can try unified approach if needed, but exec() usually takes scripts.
-                // However, Turso's execute() is strictly one statement? No, execute() is one, executeMultiple() is available in some clients but here we used execute.
-                // Safe bet: split statements.
+                // Split by semi-colon to handle multiple statements
+                const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
 
-                const statements = sql.split(';').filter(s => s.trim());
                 for (const stmt of statements) {
-                    if (stmt.trim()) {
-                        await query.exec(stmt + ';');
+                    const trimmedStmt = stmt.trim();
+                    if (trimmedStmt) {
+                        try {
+                            await query.exec(trimmedStmt + ';');
+                            console.log(`   ✓ ${trimmedStmt.slice(0, 50)}...`);
+                        } catch (stmtErr) {
+                            // Ignore "duplicate column" errors for ALTER TABLE ADD COLUMN
+                            if (stmtErr.message && stmtErr.message.includes('duplicate column')) {
+                                console.log(`   ⏭ Column already exists, skipping`);
+                            } else {
+                                console.error(`   ✗ Statement failed: ${stmtErr.message}`);
+                                throw stmtErr;
+                            }
+                        }
                     }
                 }
 
                 await query.run('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)', [file, new Date().toISOString()]);
+                console.log(`   ✅ Migration ${file} applied successfully`);
             }
         }
+
+        console.log('✅ Database ready');
 
     } catch (error) {
         console.error('❌ Database initialization error:', error);

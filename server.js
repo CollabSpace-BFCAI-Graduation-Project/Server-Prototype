@@ -50,16 +50,46 @@ function validatePassword(password) {
     return errors;
 }
 
+// ============ NORMALIZATION HELPERS ============
+function normalizeEmail(email) {
+    if (!email) return '';
+    // Trim, lowercase, and remove dots from gmail local part
+    let normalized = email.trim().toLowerCase();
+    // Handle Gmail dot-insensitivity (optional, common best practice)
+    const [local, domain] = normalized.split('@');
+    if (domain === 'gmail.com' || domain === 'googlemail.com') {
+        // Remove dots and anything after + in local part
+        const cleanLocal = local.replace(/\./g, '').split('+')[0];
+        normalized = `${cleanLocal}@gmail.com`;
+    }
+    return normalized;
+}
+
+function normalizeUsername(username) {
+    if (!username) return '';
+    // Trim and lowercase
+    return username.trim().toLowerCase();
+}
+
 // ============ AUTH ROUTES ============
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { name, username, email, password } = req.body;
+        let { name, username, email, password } = req.body;
+
+        // Trim all inputs
+        name = name?.trim() || '';
+        username = username?.trim() || '';
+        email = email?.trim() || '';
 
         if (!name || !username || !email || !password) {
             return res.status(400).json({ error: 'All fields are required' });
         }
 
-        if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        // Normalize for storage and lookup
+        const emailNormalized = normalizeEmail(email);
+        const usernameNormalized = normalizeUsername(username);
+
+        if (!/^[a-z0-9_]{3,20}$/.test(usernameNormalized)) {
             return res.status(400).json({ error: 'Username must be 3-20 chars, lowercase, numbers, underscores only' });
         }
 
@@ -72,19 +102,21 @@ app.post('/api/auth/register', async (req, res) => {
             });
         }
 
-        // Check existing
-        const existingEmail = await query.get('SELECT id FROM users WHERE email = ?', [email]);
+        // Check existing using normalized fields
+        const existingEmail = await query.get('SELECT id FROM users WHERE emailNormalized = ? OR email = ?', [emailNormalized, email.toLowerCase()]);
         if (existingEmail) return res.status(400).json({ error: 'Email already registered' });
 
-        const existingUsername = await query.get('SELECT id FROM users WHERE username = ?', [username]);
+        const existingUsername = await query.get('SELECT id FROM users WHERE usernameNormalized = ? OR username = ?', [usernameNormalized, username.toLowerCase()]);
         if (existingUsername) return res.status(400).json({ error: 'Username already taken' });
 
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
         const newUser = {
             id: uuidv4(),
             name,
-            username,
-            email,
+            username: usernameNormalized,
+            email: email.toLowerCase(),
+            emailNormalized,
+            usernameNormalized,
             password,
             avatarColor: colors[Math.floor(Math.random() * colors.length)],
             avatarImage: null,
@@ -93,12 +125,12 @@ app.post('/api/auth/register', async (req, res) => {
         };
 
         await query.run(
-            'INSERT INTO users (id, name, username, email, password, avatarColor, avatarImage, bio, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [newUser.id, newUser.name, newUser.username, newUser.email, newUser.password, newUser.avatarColor, newUser.avatarImage, newUser.bio, newUser.createdAt]
+            'INSERT INTO users (id, name, username, email, emailNormalized, usernameNormalized, password, avatarColor, avatarImage, bio, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [newUser.id, newUser.name, newUser.username, newUser.email, newUser.emailNormalized, newUser.usernameNormalized, newUser.password, newUser.avatarColor, newUser.avatarImage, newUser.bio, newUser.createdAt]
         );
 
-        const { password: _, ...userWithoutPassword } = newUser;
-        res.status(201).json(userWithoutPassword);
+        const { password: _, emailNormalized: __, usernameNormalized: ___, ...userWithoutSensitive } = newUser;
+        res.status(201).json(userWithoutSensitive);
     } catch (err) {
         console.error('Register error:', err);
         res.status(500).json({ error: 'Registration failed' });
@@ -107,13 +139,22 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
-        const user = await query.get('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
+        let { email, password } = req.body;
+
+        // Trim and normalize
+        email = email?.trim() || '';
+        const emailNormalized = normalizeEmail(email);
+
+        // Try to find user by normalized email or original email (for backwards compat)
+        const user = await query.get(
+            'SELECT * FROM users WHERE (emailNormalized = ? OR email = ?) AND password = ?',
+            [emailNormalized, email.toLowerCase(), password]
+        );
 
         if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-        const { password: _, ...userWithoutPassword } = user;
-        res.json(userWithoutPassword);
+        const { password: _, emailNormalized: __, usernameNormalized: ___, ...userWithoutSensitive } = user;
+        res.json(userWithoutSensitive);
     } catch (err) {
         console.error('Login error:', err);
         res.status(500).json({ error: 'Login failed' });
