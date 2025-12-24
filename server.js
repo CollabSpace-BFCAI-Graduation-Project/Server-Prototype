@@ -270,6 +270,189 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// ============ GOOGLE OAUTH 2.0 ============
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/auth/google/callback';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+// Store for OAuth state (in production, use Redis or similar)
+const oauthStates = new Map();
+
+// Initiate Google OAuth flow
+app.get('/api/auth/google', (req, res) => {
+    if (!GOOGLE_CLIENT_ID) {
+        return res.status(500).json({ error: 'Google OAuth not configured' });
+    }
+
+    // Generate random state for CSRF protection
+    const state = require('crypto').randomBytes(32).toString('hex');
+    oauthStates.set(state, { createdAt: Date.now() });
+
+    // Clean old states (older than 10 minutes)
+    for (const [key, value] of oauthStates.entries()) {
+        if (Date.now() - value.createdAt > 10 * 60 * 1000) {
+            oauthStates.delete(key);
+        }
+    }
+
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'openid email profile');
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'consent');
+
+    res.redirect(authUrl.toString());
+});
+
+// Google OAuth callback
+app.get('/api/auth/google/callback', async (req, res) => {
+    try {
+        const { code, state, error: oauthError } = req.query;
+
+        if (oauthError) {
+            console.error('Google OAuth error:', oauthError);
+            return res.redirect(`${FRONTEND_URL}/auth?error=oauth_denied`);
+        }
+
+        // Validate state
+        if (!state || !oauthStates.has(state)) {
+            return res.redirect(`${FRONTEND_URL}/auth?error=invalid_state`);
+        }
+        oauthStates.delete(state);
+
+        if (!code) {
+            return res.redirect(`${FRONTEND_URL}/auth?error=no_code`);
+        }
+
+        // Exchange code for tokens
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: GOOGLE_CLIENT_ID,
+                client_secret: GOOGLE_CLIENT_SECRET,
+                redirect_uri: GOOGLE_REDIRECT_URI,
+                grant_type: 'authorization_code'
+            })
+        });
+
+        const tokens = await tokenResponse.json();
+
+        if (!tokens.access_token) {
+            console.error('Token exchange failed:', tokens);
+            return res.redirect(`${FRONTEND_URL}/auth?error=token_failed`);
+        }
+
+        // Get user info from Google
+        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+        });
+
+        const googleUser = await userInfoResponse.json();
+
+        if (!googleUser.id || !googleUser.email) {
+            return res.redirect(`${FRONTEND_URL}/auth?error=no_user_info`);
+        }
+
+        // Check if this Google account is already linked
+        let oauthLink = await query.get(
+            'SELECT * FROM oauth_providers WHERE provider = ? AND providerUserId = ?',
+            ['google', googleUser.id]
+        );
+
+        let user;
+
+        if (oauthLink) {
+            // Existing linked account - get user
+            user = await query.get('SELECT * FROM users WHERE id = ?', [oauthLink.userId]);
+        } else {
+            // Check if user with this email exists
+            const emailNormalized = normalizeEmail(googleUser.email);
+            user = await query.get(
+                'SELECT * FROM users WHERE emailNormalized = ? OR email = ?',
+                [emailNormalized, googleUser.email.toLowerCase()]
+            );
+
+            if (user) {
+                // Link Google to existing account
+                await query.run(
+                    'INSERT INTO oauth_providers (id, userId, provider, providerUserId, email, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+                    [uuidv4(), user.id, 'google', googleUser.id, googleUser.email, new Date().toISOString()]
+                );
+            } else {
+                // Create new user
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
+                const username = googleUser.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20);
+
+                // Ensure unique username
+                let finalUsername = username;
+                let counter = 1;
+                while (await query.get('SELECT id FROM users WHERE username = ?', [finalUsername])) {
+                    finalUsername = `${username.slice(0, 17)}${counter++}`;
+                }
+
+                const newUser = {
+                    id: uuidv4(),
+                    name: googleUser.name || googleUser.email.split('@')[0],
+                    username: finalUsername,
+                    email: googleUser.email.toLowerCase(),
+                    emailNormalized: emailNormalized,
+                    usernameNormalized: finalUsername,
+                    password: require('crypto').randomBytes(32).toString('hex'), // Random password for OAuth users
+                    avatarColor: colors[Math.floor(Math.random() * colors.length)],
+                    avatarImage: googleUser.picture || null,
+                    bio: '',
+                    createdAt: new Date().toISOString()
+                };
+
+                await query.run(
+                    'INSERT INTO users (id, name, username, email, emailNormalized, usernameNormalized, password, avatarColor, avatarImage, bio, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [newUser.id, newUser.name, newUser.username, newUser.email, newUser.emailNormalized, newUser.usernameNormalized, newUser.password, newUser.avatarColor, newUser.avatarImage, newUser.bio, newUser.createdAt]
+                );
+
+                // Link Google account
+                await query.run(
+                    'INSERT INTO oauth_providers (id, userId, provider, providerUserId, email, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+                    [uuidv4(), newUser.id, 'google', googleUser.id, googleUser.email, new Date().toISOString()]
+                );
+
+                user = newUser;
+            }
+        }
+
+        if (!user) {
+            return res.redirect(`${FRONTEND_URL}/auth?error=user_not_found`);
+        }
+
+        // Create a simple auth token (in production, use JWT)
+        const authToken = require('crypto').randomBytes(32).toString('hex');
+
+        // Return user data via redirect with token in URL (frontend will extract and store)
+        const userData = {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            email: user.email,
+            avatarColor: user.avatarColor,
+            avatarImage: user.avatarImage,
+            bio: user.bio
+        };
+
+        // Redirect to frontend with user data encoded in URL
+        const redirectUrl = `${FRONTEND_URL}/auth/callback?user=${encodeURIComponent(JSON.stringify(userData))}`;
+        res.redirect(redirectUrl);
+
+    } catch (err) {
+        console.error('Google OAuth callback error:', err);
+        res.redirect(`${FRONTEND_URL}/auth?error=callback_failed`);
+    }
+});
+
 // ============ USER ROUTES ============
 app.get('/api/users', async (req, res) => {
     try {
