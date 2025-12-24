@@ -1,8 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { put, del } = require('@vercel/blob');
 const db = require('./db');
 
 const app = express();
@@ -104,48 +106,62 @@ app.delete('/api/users/:id', (req, res) => {
 });
 
 // Avatar upload
-app.post('/api/users/:id/avatar', (req, res) => {
-    const { imageData } = req.body;
-    if (!imageData) return res.status(400).json({ error: 'No image data provided' });
+app.post('/api/users/:id/avatar', async (req, res) => {
+    try {
+        const { imageData } = req.body;
+        if (!imageData) return res.status(400).json({ error: 'No image data provided' });
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Delete old avatar if exists
-    if (user.avatarImage) {
-        const oldPath = path.join(__dirname, user.avatarImage);
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        // Delete old avatar from Vercel Blob if exists
+        if (user.avatarImage && user.avatarImage.includes('blob.vercel-storage.com')) {
+            try { await del(user.avatarImage); } catch (e) { /* ignore */ }
+        }
+
+        // Parse base64 image
+        const matches = imageData.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (!matches) return res.status(400).json({ error: 'Invalid image format' });
+
+        const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+        const base64Data = matches[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const filename = `avatars/avatar_${req.params.id}_${Date.now()}.${ext}`;
+
+        // Upload to Vercel Blob
+        const blob = await put(filename, buffer, {
+            access: 'public',
+            contentType: `image/${ext}`
+        });
+
+        // Store blob URL in database
+        db.prepare('UPDATE users SET avatarImage = ? WHERE id = ?').run(blob.url, req.params.id);
+
+        const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
+        res.json(updated);
+    } catch (err) {
+        console.error('Avatar upload error:', err);
+        res.status(500).json({ error: 'Failed to upload avatar' });
     }
-
-    // Save new avatar
-    const matches = imageData.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) return res.status(400).json({ error: 'Invalid image format' });
-
-    const ext = matches[1] === 'jpeg' ? 'jpeg' : matches[1];
-    const base64Data = matches[2];
-    const filename = `avatar_${req.params.id}_${Date.now()}.${ext}`;
-    const filepath = path.join(IMAGES_DIR, filename);
-    fs.writeFileSync(filepath, base64Data, 'base64');
-
-    const avatarImage = `/images/${filename}`;
-    db.prepare('UPDATE users SET avatarImage = ? WHERE id = ?').run(avatarImage, req.params.id);
-
-    const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
-    res.json(updated);
 });
 
-app.delete('/api/users/:id/avatar', (req, res) => {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+app.delete('/api/users/:id/avatar', async (req, res) => {
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (user.avatarImage) {
-        const oldPath = path.join(__dirname, user.avatarImage);
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        // Delete from Vercel Blob if exists
+        if (user.avatarImage && user.avatarImage.includes('blob.vercel-storage.com')) {
+            try { await del(user.avatarImage); } catch (e) { /* ignore */ }
+        }
+
+        db.prepare('UPDATE users SET avatarImage = NULL WHERE id = ?').run(req.params.id);
+        const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
+        res.json(updated);
+    } catch (err) {
+        console.error('Avatar delete error:', err);
+        res.status(500).json({ error: 'Failed to delete avatar' });
     }
-
-    db.prepare('UPDATE users SET avatarImage = NULL WHERE id = ?').run(req.params.id);
-    const updated = db.prepare('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?').get(req.params.id);
-    res.json(updated);
 });
 
 // ============ SPACES ROUTES ============
@@ -199,7 +215,7 @@ app.get('/api/spaces', (req, res) => {
                 username: m.username,
                 role: m.role,
                 avatarColor: m.avatarColor,
-                avatarImage: m.avatarImage ? `http://localhost:${PORT}${m.avatarImage}` : null,
+                avatarImage: m.avatarImage,
                 joinedAt: m.joinedAt
             })),
             memberCount: members.length,
@@ -256,24 +272,26 @@ app.put('/api/spaces/:id', (req, res) => {
     res.json({ ...updated, thumbnail: updated.thumbnailGradient || updated.thumbnailImage });
 });
 
-app.delete('/api/spaces/:id', (req, res) => {
-    // Get files first (before cascade deletes them from DB)
-    const files = db.prepare('SELECT storedFilename FROM files WHERE spaceId = ?').all(req.params.id);
+app.delete('/api/spaces/:id', async (req, res) => {
+    try {
+        // Get files first (before cascade deletes them from DB)
+        const files = db.prepare('SELECT downloadUrl FROM files WHERE spaceId = ?').all(req.params.id);
 
-    const result = db.prepare('DELETE FROM spaces WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Space not found' });
+        const result = db.prepare('DELETE FROM spaces WHERE id = ?').run(req.params.id);
+        if (result.changes === 0) return res.status(404).json({ error: 'Space not found' });
 
-    // Delete physical files from disk
-    files.forEach(f => {
-        if (f.storedFilename) {
-            const filepath = path.join(UPLOADS_DIR, f.storedFilename);
-            if (fs.existsSync(filepath)) {
-                try { fs.unlinkSync(filepath); } catch (e) { /* ignore */ }
+        // Delete files from Vercel Blob
+        for (const f of files) {
+            if (f.downloadUrl && f.downloadUrl.includes('blob.vercel-storage.com')) {
+                try { await del(f.downloadUrl); } catch (e) { /* ignore */ }
             }
         }
-    });
 
-    res.json({ success: true });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Space delete error:', err);
+        res.status(500).json({ error: 'Failed to delete space' });
+    }
 });
 
 // ============ SPACE MEMBERS ROUTES ============
@@ -294,7 +312,7 @@ app.get('/api/spaces/:spaceId/members', (req, res) => {
         email: m.email,
         role: m.role,
         avatarColor: m.avatarColor,
-        avatarImage: m.avatarImage ? `http://localhost:${PORT}${m.avatarImage}` : null,
+        avatarImage: m.avatarImage,
         joinedAt: m.joinedAt
     }));
 
@@ -539,7 +557,7 @@ app.post('/api/messages/:spaceId', (req, res) => {
         time: new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         createdAt,
         avatarColor: sender?.avatarColor || '#ec4899',
-        avatarImage: sender?.avatarImage ? `http://localhost:${PORT}${sender.avatarImage}` : null
+        avatarImage: sender?.avatarImage
     });
 });
 
@@ -560,75 +578,85 @@ app.get('/api/files/:spaceId', (req, res) => {
     res.json(enriched);
 });
 
-app.post('/api/files/:spaceId', (req, res) => {
-    const { name, fileData, uploadedBy } = req.body;
-    if (!name || !fileData) return res.status(400).json({ error: 'File name and data required' });
+app.post('/api/files/:spaceId', async (req, res) => {
+    try {
+        const { name, fileData, uploadedBy } = req.body;
+        if (!name || !fileData) return res.status(400).json({ error: 'File name and data required' });
 
-    const matches = fileData.match(/^data:(.+);base64,(.+)$/);
-    if (!matches) return res.status(400).json({ error: 'Invalid file format' });
+        const matches = fileData.match(/^data:(.+);base64,(.+)$/);
+        if (!matches) return res.status(400).json({ error: 'Invalid file format' });
 
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const extension = name.split('.').pop() || 'bin';
-    const storedFilename = `${uuidv4()}.${extension}`;
-    const filepath = path.join(UPLOADS_DIR, storedFilename);
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const extension = name.split('.').pop() || 'bin';
+        const blobFilename = `files/${uuidv4()}_${name}`;
 
-    fs.writeFileSync(filepath, base64Data, 'base64');
+        // Calculate size
+        let size = buffer.length + ' B';
+        if (buffer.length > 1024 * 1024) size = (buffer.length / (1024 * 1024)).toFixed(1) + ' MB';
+        else if (buffer.length > 1024) size = (buffer.length / 1024).toFixed(1) + ' KB';
 
-    const stats = fs.statSync(filepath);
-    let size = stats.size + ' B';
-    if (stats.size > 1024 * 1024) size = (stats.size / (1024 * 1024)).toFixed(1) + ' MB';
-    else if (stats.size > 1024) size = (stats.size / 1024).toFixed(1) + ' KB';
+        // Upload to Vercel Blob
+        const blob = await put(blobFilename, buffer, {
+            access: 'public',
+            contentType: mimeType
+        });
 
-    const id = uuidv4();
-    const downloadUrl = `/uploads/${storedFilename}`;
-    const createdAt = new Date().toISOString();
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
 
-    db.prepare(`
-        INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, req.params.spaceId, name, storedFilename, extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl, createdAt);
+        db.prepare(`
+            INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, createdAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, req.params.spaceId, name, blobFilename, extension.toUpperCase(), mimeType, size, uploadedBy, blob.url, createdAt);
 
-    res.status(201).json({ id, spaceId: req.params.spaceId, name, storedFilename, type: extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl, createdAt });
+        res.status(201).json({ id, spaceId: req.params.spaceId, name, storedFilename: blobFilename, type: extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl: blob.url, createdAt });
+    } catch (err) {
+        console.error('File upload error:', err);
+        res.status(500).json({ error: 'Failed to upload file' });
+    }
 });
 
 app.get('/api/files/:fileId/download', (req, res) => {
     const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.fileId);
-    if (!file || !file.storedFilename) return res.status(404).json({ error: 'File not found' });
+    if (!file || !file.downloadUrl) return res.status(404).json({ error: 'File not found' });
 
-    const filepath = path.join(UPLOADS_DIR, file.storedFilename);
-    if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'File not found on disk' });
-
-    res.download(filepath, file.name);
+    // Redirect to Vercel Blob URL for download
+    res.redirect(file.downloadUrl);
 });
 
-app.delete('/api/files/:fileId', (req, res) => {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: 'User ID required' });
+app.delete('/api/files/:fileId', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ error: 'User ID required' });
 
-    const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.fileId);
-    if (!file) return res.status(404).json({ error: 'File not found' });
+        const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.fileId);
+        if (!file) return res.status(404).json({ error: 'File not found' });
 
-    // Permission check
-    const space = db.prepare('SELECT ownerId FROM spaces WHERE id = ?').get(file.spaceId);
-    const membership = db.prepare('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?').get(file.spaceId, userId);
+        // Permission check
+        const space = db.prepare('SELECT ownerId FROM spaces WHERE id = ?').get(file.spaceId);
+        const membership = db.prepare('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?').get(file.spaceId, userId);
 
-    const isUploader = file.uploadedBy === userId;
-    const isOwner = space?.ownerId === userId;
-    const isAdmin = membership?.role === 'Admin' || membership?.role === 'Owner';
+        const isUploader = file.uploadedBy === userId;
+        const isOwner = space?.ownerId === userId;
+        const isAdmin = membership?.role === 'Admin' || membership?.role === 'Owner';
 
-    if (!isUploader && !isOwner && !isAdmin) {
-        return res.status(403).json({ error: 'Permission denied' });
+        if (!isUploader && !isOwner && !isAdmin) {
+            return res.status(403).json({ error: 'Permission denied' });
+        }
+
+        // Delete from Vercel Blob
+        if (file.downloadUrl && file.downloadUrl.includes('blob.vercel-storage.com')) {
+            try { await del(file.downloadUrl); } catch (e) { /* ignore */ }
+        }
+
+        db.prepare('DELETE FROM files WHERE id = ?').run(req.params.fileId);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('File delete error:', err);
+        res.status(500).json({ error: 'Failed to delete file' });
     }
-
-    // Delete from disk
-    if (file.storedFilename) {
-        const filepath = path.join(UPLOADS_DIR, file.storedFilename);
-        if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-    }
-
-    db.prepare('DELETE FROM files WHERE id = ?').run(req.params.fileId);
-    res.json({ success: true });
 });
 
 // ============ FAVORITES ROUTES ============
