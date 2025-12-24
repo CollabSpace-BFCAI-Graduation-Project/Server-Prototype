@@ -75,5 +75,16 @@
     "avatarImage": "/images/avatar_0dc7ef4c-89dd-45e7-b743-97a1bdc368b0_1766380009948.jpeg",
     "bio": "",
     "createdAt": "2025-12-21T16:13:24.033Z"
+  },
+  {
+    "id": "0c7ad972-9eac-4edf-83e8-80eaa0761d3c",
+    "name": "Test",
+    "username": "test",
+    "email": "test@gmail.com",
+    "password": "12345678",
+    "avatarColor": "#10b981",
+    "avatarImage": null,
+    "bio": "",
+    "createdAt": "2025-12-22T21:24:49.934Z"
   }
 ]
