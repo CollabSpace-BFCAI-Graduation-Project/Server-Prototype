@@ -997,6 +997,37 @@ app.post('/api/spaces/:id/requests/:requestId/reject', async (req, res) => {
     }
 });
 
+// Get user's own pending join requests
+app.get('/api/users/:userId/join-requests', async (req, res) => {
+    try {
+        const requests = await query.all(`
+            SELECT jr.*, s.name as spaceName, s.thumbnailGradient, s.thumbnailImage
+            FROM join_requests jr
+            JOIN spaces s ON jr.spaceId = s.id
+            WHERE jr.userId = ?
+            ORDER BY jr.createdAt DESC
+        `, [req.params.userId]);
+        res.json(requests);
+    } catch (err) {
+        console.error('Get user requests error:', err);
+        res.status(500).json({ error: 'Failed to get join requests' });
+    }
+});
+
+// Cancel user's own join request
+app.delete('/api/users/:userId/join-requests/:requestId', async (req, res) => {
+    try {
+        const request = await query.get('SELECT * FROM join_requests WHERE id = ? AND userId = ?', [req.params.requestId, req.params.userId]);
+        if (!request) return res.status(404).json({ error: 'Request not found' });
+
+        await query.run('DELETE FROM join_requests WHERE id = ?', [req.params.requestId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Cancel request error:', err);
+        res.status(500).json({ error: 'Failed to cancel request' });
+    }
+});
+
 // Upload space thumbnail image
 app.post('/api/spaces/:id/thumbnail', async (req, res) => {
     try {
@@ -1447,6 +1478,67 @@ app.post('/api/invites/:inviteId/decline', async (req, res) => {
     } catch (err) {
         console.error('Decline invite error:', err);
         res.status(500).json({ error: 'Failed to decline invite' });
+    }
+});
+
+// Get pending invites sent by a space (for revoking)
+app.get('/api/spaces/:spaceId/invites', async (req, res) => {
+    try {
+        const invites = await query.all(`
+            SELECT si.*, u.name, u.username, u.avatarColor, u.avatarImage
+            FROM space_invites si
+            JOIN users u ON si.userId = u.id
+            WHERE si.spaceId = ? AND si.status = 'pending'
+            ORDER BY si.createdAt DESC
+        `, [req.params.spaceId]);
+        res.json(invites);
+    } catch (err) {
+        console.error('Get space invites error:', err);
+        res.status(500).json({ error: 'Failed to get invites' });
+    }
+});
+
+// Revoke a pending invite (by inviter/admin)
+app.delete('/api/invites/:inviteId', async (req, res) => {
+    try {
+        const invite = await query.get('SELECT * FROM space_invites WHERE id = ?', [req.params.inviteId]);
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+        if (invite.status !== 'pending') return res.status(400).json({ error: 'Invite already processed' });
+
+        await query.run('DELETE FROM space_invites WHERE id = ?', [req.params.inviteId]);
+
+        // Also delete the invite notification
+        await query.run(
+            'DELETE FROM notifications WHERE type = ? AND targetId = ? AND userId = ?',
+            ['invite', invite.spaceId, invite.userId]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Revoke invite error:', err);
+        res.status(500).json({ error: 'Failed to revoke invite' });
+    }
+});
+
+// Cancel a join request (by space admin/owner)
+app.delete('/api/spaces/:spaceId/requests/:requestId', async (req, res) => {
+    try {
+        const request = await query.get('SELECT * FROM join_requests WHERE id = ?', [req.params.requestId]);
+        if (!request) return res.status(404).json({ error: 'Request not found' });
+
+        await query.run('DELETE FROM join_requests WHERE id = ?', [req.params.requestId]);
+
+        // Send notification to requester
+        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        await query.run(
+            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [uuidv4(), request.userId, 'system', null, 'space', req.params.spaceId, `Your request to join ${space?.name || 'a space'} was declined`, 0, new Date().toISOString()]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Cancel request error:', err);
+        res.status(500).json({ error: 'Failed to cancel request' });
     }
 });
 
