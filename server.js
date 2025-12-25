@@ -1211,9 +1211,12 @@ app.post('/api/spaces/:spaceId/members/:memberId/ban', async (req, res) => {
 
         // Send notification to banned user
         const notifId = uuidv4();
+        const banMessage = reason
+            ? `You have been banned from ${space?.name || 'a space'} by ${banner?.name || 'an admin'}. Reason: ${reason}`
+            : `You have been banned from ${space?.name || 'a space'} by ${banner?.name || 'an admin'}`;
         await query.run(
             'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [notifId, member.userId, 'ban', bannedBy, 'space', req.params.spaceId, `You have been banned from ${space?.name || 'a space'} by ${banner?.name || 'an admin'}`, 0, new Date().toISOString()]
+            [notifId, member.userId, 'ban', bannedBy, 'space', req.params.spaceId, banMessage, 0, new Date().toISOString()]
         );
 
         res.json({ success: true });
