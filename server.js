@@ -993,6 +993,41 @@ app.post('/api/spaces/:id/requests/:requestId/reject', async (req, res) => {
     }
 });
 
+// Upload space thumbnail image
+app.post('/api/spaces/:id/thumbnail', async (req, res) => {
+    try {
+        const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        const { imageData } = req.body; // base64 string
+        if (!imageData) return res.status(400).json({ error: 'No image data provided' });
+
+        // Parse base64
+        const matches = imageData.match(/^data:(.+);base64,(.+)$/);
+        if (!matches) return res.status(400).json({ error: 'Invalid image format' });
+
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const ext = mimeType.split('/')[1] || 'png';
+        const filename = `space-${req.params.id}-${Date.now()}.${ext}`;
+        const filepath = path.join(UPLOADS_DIR, filename);
+
+        // Save file
+        fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+
+        // Update database - clear gradient if image is set
+        await query.run(
+            'UPDATE spaces SET thumbnailImage = ?, thumbnailGradient = NULL WHERE id = ?',
+            [`/uploads/${filename}`, req.params.id]
+        );
+
+        res.json({ thumbnailImage: `/uploads/${filename}` });
+    } catch (err) {
+        console.error('Upload space thumbnail error:', err);
+        res.status(500).json({ error: 'Failed to upload thumbnail' });
+    }
+});
+
 app.get('/api/spaces/:id', async (req, res) => {
     try {
         const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
