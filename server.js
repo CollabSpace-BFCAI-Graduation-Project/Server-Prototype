@@ -1344,6 +1344,49 @@ app.post('/api/spaces/:spaceId/invite', async (req, res) => {
     }
 });
 
+// Invite by userId (for profile modal invite)
+app.post('/api/spaces/:spaceId/invite-user', async (req, res) => {
+    try {
+        const { userId, inviterId } = req.body;
+        if (!userId) return res.status(400).json({ error: 'userId required' });
+
+        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        // Check if user is banned
+        const banned = await query.get('SELECT id FROM space_bans WHERE spaceId = ? AND userId = ?', [req.params.spaceId, userId]);
+        if (banned) return res.status(403).json({ error: 'User is banned from this space' });
+
+        // Check if already member
+        const isMember = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [req.params.spaceId, userId]);
+        if (isMember) return res.status(400).json({ error: 'User is already a member' });
+
+        // Check if already invited
+        const hasInvite = await query.get('SELECT id FROM space_invites WHERE spaceId = ? AND userId = ? AND status = ?', [req.params.spaceId, userId, 'pending']);
+        if (hasInvite) return res.status(400).json({ error: 'User already has a pending invite' });
+
+        // Get inviter name
+        const inviter = await query.get('SELECT name FROM users WHERE id = ?', [inviterId]);
+
+        const inviteId = uuidv4();
+        await query.run(
+            'INSERT INTO space_invites (id, spaceId, userId, inviterId, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [inviteId, req.params.spaceId, userId, inviterId, 'pending', new Date().toISOString()]
+        );
+
+        // Create notification
+        await query.run(
+            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [uuidv4(), userId, 'invite', inviterId, 'space', req.params.spaceId, `${inviter?.name || 'Someone'} invited you to join ${space.name}`, 0, new Date().toISOString()]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Invite user error:', err);
+        res.status(500).json({ error: 'Failed to send invite' });
+    }
+});
+
 app.get('/api/users/:userId/invites', async (req, res) => {
     try {
         const invites = await query.all(`
