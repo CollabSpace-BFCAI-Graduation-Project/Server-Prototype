@@ -505,6 +505,143 @@ app.delete('/api/users/:id', async (req, res) => {
     }
 });
 
+// ============ USER PROFILE & PRIVACY ============
+
+// Get user's public profile (respects privacy settings)
+app.get('/api/users/:id/profile', async (req, res) => {
+    try {
+        const viewerId = req.query.viewerId; // The user viewing the profile
+        const targetId = req.params.id;
+
+        const user = await query.get(
+            'SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt, showEmail, profileVisibility FROM users WHERE id = ?',
+            [targetId]
+        );
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Check if viewing own profile
+        if (viewerId === targetId) {
+            const { password, emailNormalized, usernameNormalized, failedLoginAttempts, lockedUntil, lastFailedLoginAt, ...safeUser } = user;
+            return res.json({ ...safeUser, isOwnProfile: true });
+        }
+
+        // Check visibility
+        if (user.profileVisibility === 'private') {
+            return res.json({
+                id: user.id,
+                name: user.name,
+                username: user.username,
+                avatarColor: user.avatarColor,
+                avatarImage: user.avatarImage,
+                isPrivate: true
+            });
+        }
+
+        if (user.profileVisibility === 'members') {
+            // Check if they share any spaces
+            const sharedSpace = await query.get(`
+                SELECT sm1.spaceId FROM space_members sm1
+                INNER JOIN space_members sm2 ON sm1.spaceId = sm2.spaceId
+                WHERE sm1.userId = ? AND sm2.userId = ?
+                LIMIT 1
+            `, [viewerId, targetId]);
+
+            if (!sharedSpace) {
+                return res.json({
+                    id: user.id,
+                    name: user.name,
+                    username: user.username,
+                    avatarColor: user.avatarColor,
+                    avatarImage: user.avatarImage,
+                    isPrivate: true,
+                    reason: 'members_only'
+                });
+            }
+        }
+
+        // Return public profile
+        const profile = {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            avatarColor: user.avatarColor,
+            avatarImage: user.avatarImage,
+            bio: user.bio,
+            createdAt: user.createdAt,
+            isPrivate: false
+        };
+
+        // Include email if allowed
+        if (user.showEmail) {
+            profile.email = user.email;
+        }
+
+        res.json(profile);
+    } catch (err) {
+        console.error('Get profile error:', err);
+        res.status(500).json({ error: 'Failed to get profile' });
+    }
+});
+
+// Update privacy settings
+app.put('/api/users/:id/privacy', async (req, res) => {
+    try {
+        const { showEmail, profileVisibility } = req.body;
+
+        const user = await query.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Validate profileVisibility
+        const validVisibilities = ['public', 'members', 'private'];
+        if (profileVisibility && !validVisibilities.includes(profileVisibility)) {
+            return res.status(400).json({ error: 'Invalid profileVisibility value' });
+        }
+
+        await query.run(
+            'UPDATE users SET showEmail = ?, profileVisibility = ? WHERE id = ?',
+            [
+                showEmail !== undefined ? (showEmail ? 1 : 0) : user.showEmail,
+                profileVisibility || user.profileVisibility || 'public',
+                req.params.id
+            ]
+        );
+
+        const updated = await query.get(
+            'SELECT id, showEmail, profileVisibility FROM users WHERE id = ?',
+            [req.params.id]
+        );
+        res.json(updated);
+    } catch (err) {
+        console.error('Update privacy error:', err);
+        res.status(500).json({ error: 'Failed to update privacy settings' });
+    }
+});
+
+// Get spaces shared between two users
+app.get('/api/users/:id/shared-spaces', async (req, res) => {
+    try {
+        const targetId = req.params.id;
+        const viewerId = req.query.viewerId;
+
+        if (!viewerId) {
+            return res.status(400).json({ error: 'viewerId is required' });
+        }
+
+        const sharedSpaces = await query.all(`
+            SELECT s.id, s.name, s.thumbnailGradient, s.thumbnailImage, s.category
+            FROM spaces s
+            INNER JOIN space_members sm1 ON s.id = sm1.spaceId
+            INNER JOIN space_members sm2 ON s.id = sm2.spaceId
+            WHERE sm1.userId = ? AND sm2.userId = ?
+        `, [viewerId, targetId]);
+
+        res.json(sharedSpaces);
+    } catch (err) {
+        console.error('Get shared spaces error:', err);
+        res.status(500).json({ error: 'Failed to get shared spaces' });
+    }
+});
+
 // Avatar upload
 app.post('/api/users/:id/avatar', async (req, res) => {
     try {
