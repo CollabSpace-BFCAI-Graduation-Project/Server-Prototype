@@ -923,6 +923,10 @@ app.post('/api/spaces/:id/join', async (req, res) => {
         const member = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [spaceId, userId]);
         if (member) return res.status(400).json({ error: 'Already a member' });
 
+        // Check if user is banned
+        const banned = await query.get('SELECT id FROM space_bans WHERE spaceId = ? AND userId = ?', [spaceId, userId]);
+        if (banned) return res.status(403).json({ error: 'You are banned from this space' });
+
         // Check if already pending
         const request = await query.get('SELECT id FROM join_requests WHERE spaceId = ? AND userId = ?', [spaceId, userId]);
         if (request) return res.status(400).json({ error: 'Request already pending' });
@@ -1180,6 +1184,78 @@ app.delete('/api/spaces/:spaceId/members/:memberId', async (req, res) => {
     }
 });
 
+// Ban a member from space
+app.post('/api/spaces/:spaceId/members/:memberId/ban', async (req, res) => {
+    try {
+        const { bannedBy, reason } = req.body;
+        const member = await query.get('SELECT * FROM space_members WHERE id = ?', [req.params.memberId]);
+        if (!member) return res.status(404).json({ error: 'Member not found' });
+        if (member.role === 'Owner') return res.status(403).json({ error: 'Cannot ban the owner' });
+
+        // Get space info for notification
+        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        const banner = await query.get('SELECT name FROM users WHERE id = ?', [bannedBy]);
+
+        // Add to bans table
+        const banId = uuidv4();
+        await query.run(
+            'INSERT INTO space_bans (id, spaceId, userId, bannedBy, reason, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [banId, req.params.spaceId, member.userId, bannedBy, reason || null, new Date().toISOString()]
+        );
+
+        // Remove from members
+        await query.run('DELETE FROM space_members WHERE id = ?', [req.params.memberId]);
+
+        // Delete any pending join requests from this user
+        await query.run('DELETE FROM join_requests WHERE spaceId = ? AND userId = ?', [req.params.spaceId, member.userId]);
+
+        // Send notification to banned user
+        const notifId = uuidv4();
+        await query.run(
+            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [notifId, member.userId, 'ban', bannedBy, 'space', req.params.spaceId, `You have been banned from ${space?.name || 'a space'} by ${banner?.name || 'an admin'}`, 0, new Date().toISOString()]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ban member error:', err);
+        res.status(500).json({ error: 'Failed to ban member' });
+    }
+});
+
+// Get banned users for a space
+app.get('/api/spaces/:spaceId/bans', async (req, res) => {
+    try {
+        const bans = await query.all(`
+            SELECT sb.*, u.name, u.username, u.avatarColor, u.avatarImage, 
+                   banner.name as bannedByName
+            FROM space_bans sb
+            JOIN users u ON sb.userId = u.id
+            LEFT JOIN users banner ON sb.bannedBy = banner.id
+            WHERE sb.spaceId = ?
+            ORDER BY sb.createdAt DESC
+        `, [req.params.spaceId]);
+        res.json(bans);
+    } catch (err) {
+        console.error('Get bans error:', err);
+        res.status(500).json({ error: 'Failed to get banned users' });
+    }
+});
+
+// Unban a user
+app.delete('/api/spaces/:spaceId/bans/:banId', async (req, res) => {
+    try {
+        const ban = await query.get('SELECT * FROM space_bans WHERE id = ?', [req.params.banId]);
+        if (!ban) return res.status(404).json({ error: 'Ban not found' });
+
+        await query.run('DELETE FROM space_bans WHERE id = ?', [req.params.banId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Unban error:', err);
+        res.status(500).json({ error: 'Failed to unban user' });
+    }
+});
+
 app.post('/api/spaces/:spaceId/leave', async (req, res) => {
     try {
         const { userId } = req.body;
@@ -1289,6 +1365,10 @@ app.post('/api/invites/:inviteId/accept', async (req, res) => {
         const invite = await query.get('SELECT * FROM space_invites WHERE id = ?', [req.params.inviteId]);
         if (!invite) return res.status(404).json({ error: 'Invite not found' });
         if (invite.status !== 'pending') return res.status(400).json({ error: 'Invite already processed' });
+
+        // Check if user is banned from this space
+        const banned = await query.get('SELECT id FROM space_bans WHERE spaceId = ? AND userId = ?', [invite.spaceId, invite.userId]);
+        if (banned) return res.status(403).json({ error: 'You are banned from this space' });
 
         // Update invite
         await query.run('UPDATE space_invites SET status = ?, respondedAt = ? WHERE id = ?', ['accepted', new Date().toISOString(), req.params.inviteId]);
