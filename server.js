@@ -464,6 +464,58 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+// Search public profiles - MUST be before :id route
+app.get('/api/users/search', async (req, res) => {
+    try {
+        const { q, viewerId, limit = 10 } = req.query;
+
+        if (!q || q.length < 2) {
+            return res.json([]);
+        }
+
+        const searchTerm = `%${q.toLowerCase()}%`;
+
+        // Find users matching search, excluding private profiles
+        const users = await query.all(`
+            SELECT id, name, username, avatarColor, avatarImage, bio, profileVisibility
+            FROM users
+            WHERE (LOWER(name) LIKE ? OR LOWER(username) LIKE ?)
+            AND profileVisibility != 'private'
+            AND id != ?
+            LIMIT ?
+        `, [searchTerm, searchTerm, viewerId || '', parseInt(limit)]);
+
+        // For members-only profiles, check if viewer shares a space
+        const results = [];
+        for (const user of users) {
+            if (user.profileVisibility === 'members' && viewerId) {
+                const sharedSpace = await query.get(`
+                    SELECT sm1.spaceId FROM space_members sm1
+                    INNER JOIN space_members sm2 ON sm1.spaceId = sm2.spaceId
+                    WHERE sm1.userId = ? AND sm2.userId = ?
+                    LIMIT 1
+                `, [viewerId, user.id]);
+
+                if (!sharedSpace) continue;
+            }
+
+            results.push({
+                id: user.id,
+                name: user.name,
+                username: user.username,
+                avatarColor: user.avatarColor,
+                avatarImage: user.avatarImage,
+                bio: user.bio?.slice(0, 50) + (user.bio?.length > 50 ? '...' : '')
+            });
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error('Search users error:', err);
+        res.status(500).json({ error: 'Failed to search users' });
+    }
+});
+
 app.get('/api/users/:id', async (req, res) => {
     try {
         const user = await query.get('SELECT id, name, username, email, avatarColor, avatarImage, bio, createdAt FROM users WHERE id = ?', [req.params.id]);
