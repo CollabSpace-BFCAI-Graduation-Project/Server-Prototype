@@ -467,27 +467,39 @@ app.get('/api/users', async (req, res) => {
 // Search public profiles - MUST be before :id route
 app.get('/api/users/search', async (req, res) => {
     try {
-        const { q, viewerId, limit = 10 } = req.query;
+        const { q, viewerId, limit = 50 } = req.query; // Increased default limit
 
-        if (!q || q.length < 2) {
-            return res.json([]);
-        }
-
-        const searchTerm = `%${q.toLowerCase()}%`;
-
-        // Find users matching search, excluding private profiles
-        const users = await query.all(`
+        let sql = `
             SELECT id, name, username, avatarColor, avatarImage, bio, profileVisibility
             FROM users
-            WHERE (LOWER(name) LIKE ? OR LOWER(username) LIKE ?)
-            AND profileVisibility != 'private'
+            WHERE profileVisibility != 'private'
             AND id != ?
-            LIMIT ?
-        `, [searchTerm, searchTerm, viewerId || '', parseInt(limit)]);
+        `;
+        const params = [viewerId || ''];
+
+        if (q && q.length > 0) {
+            const searchTerm = `%${q.toLowerCase()}%`;
+            sql += ` AND (LOWER(name) LIKE ? OR LOWER(username) LIKE ?)`;
+            params.push(searchTerm, searchTerm);
+        }
+
+        sql += ` LIMIT ?`;
+        params.push(parseInt(limit));
+
+        const users = await query.all(sql, params);
 
         // For members-only profiles, check if viewer shares a space
+        // Optimization: For "all users" list (empty q), we might want to skip complex privacy checks 
+        // and only show 'public' ones or do a bulk check. 
+        // For now, keeping the check but knowing it might be N+1 queries. 
+        // Ideally, this should be a JOIN.
         const results = [];
         for (const user of users) {
+            if (user.profileVisibility === 'public') {
+                results.push(user);
+                continue;
+            }
+
             if (user.profileVisibility === 'members' && viewerId) {
                 const sharedSpace = await query.get(`
                     SELECT sm1.spaceId FROM space_members sm1
@@ -496,17 +508,8 @@ app.get('/api/users/search', async (req, res) => {
                     LIMIT 1
                 `, [viewerId, user.id]);
 
-                if (!sharedSpace) continue;
+                if (sharedSpace) results.push(user);
             }
-
-            results.push({
-                id: user.id,
-                name: user.name,
-                username: user.username,
-                avatarColor: user.avatarColor,
-                avatarImage: user.avatarImage,
-                bio: user.bio?.slice(0, 50) + (user.bio?.length > 50 ? '...' : '')
-            });
         }
 
         res.json(results);
@@ -808,7 +811,8 @@ app.get('/api/spaces', async (req, res) => {
                 })),
                 memberCount: members.length,
                 files,
-                fileCount: files.length
+                fileCount: files.length,
+                requestsCount: (await query.get('SELECT COUNT(*) as count FROM join_requests WHERE spaceId = ?', [space.id]))?.count || 0
             };
         }));
 
@@ -850,11 +854,157 @@ app.post('/api/spaces', async (req, res) => {
     }
 });
 
+// Search public spaces
+app.get('/api/spaces/search', async (req, res) => {
+    try {
+        const { q, userId, limit = 50 } = req.query;
+
+        // Base query
+        let sql = `
+            SELECT s.*, u.name as ownerName,
+            (SELECT COUNT(*) FROM space_members WHERE spaceId = s.id) as memberCount
+            FROM spaces s
+            LEFT JOIN users u ON s.ownerId = u.id
+            WHERE s.visibility = 'public'
+        `;
+
+        const params = [];
+
+        // Add search filter if query provided
+        if (q && q.length > 0) {
+            const searchTerm = `%${q.toLowerCase()}%`;
+            sql += ` AND (LOWER(s.name) LIKE ? OR LOWER(s.description) LIKE ?)`;
+            params.push(searchTerm, searchTerm);
+        }
+
+        // Sort and limit
+        sql += ` ORDER BY memberCount DESC, s.createdAt DESC LIMIT ?`;
+        params.push(parseInt(limit));
+
+        // Find public spaces matching search
+        const spaces = await query.all(sql, params);
+
+        // Check membership status for each space
+        const results = await Promise.all(spaces.map(async space => {
+            let status = 'none'; // none, member, pending
+            if (userId) {
+                const member = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [space.id, userId]);
+                if (member) {
+                    status = 'member';
+                } else {
+                    const request = await query.get('SELECT id FROM join_requests WHERE spaceId = ? AND userId = ?', [space.id, userId]);
+                    if (request) status = 'pending';
+                }
+            }
+            return {
+                ...space,
+                thumbnail: space.thumbnailGradient || space.thumbnailImage,
+                membershipStatus: status
+            };
+        }));
+
+        res.json(results);
+    } catch (err) {
+        console.error('Search spaces error:', err);
+        res.status(500).json({ error: 'Failed to search spaces' });
+    }
+});
+
+// Join request routes
+app.post('/api/spaces/:id/join', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const spaceId = req.params.id;
+
+        const space = await query.get('SELECT * FROM spaces WHERE id = ?', [spaceId]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        // Check if already member
+        const member = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [spaceId, userId]);
+        if (member) return res.status(400).json({ error: 'Already a member' });
+
+        // Check if already pending
+        const request = await query.get('SELECT id FROM join_requests WHERE spaceId = ? AND userId = ?', [spaceId, userId]);
+        if (request) return res.status(400).json({ error: 'Request already pending' });
+
+        // Prepare request
+        const requestId = uuidv4();
+        await query.run(
+            'INSERT INTO join_requests (id, spaceId, userId) VALUES (?, ?, ?)',
+            [requestId, spaceId, userId]
+        );
+
+        // Notify owner (implementation skipped for simplicity, would add to notifications table)
+
+        res.json({ success: true, requestId });
+    } catch (err) {
+        console.error('Join space error:', err);
+        res.status(500).json({ error: 'Failed to send join request' });
+    }
+});
+
+app.get('/api/spaces/:id/requests', async (req, res) => {
+    try {
+        const requests = await query.all(`
+            SELECT jr.*, u.name, u.username, u.avatarColor, u.avatarImage
+            FROM join_requests jr
+            JOIN users u ON jr.userId = u.id
+            WHERE jr.spaceId = ?
+            ORDER BY jr.createdAt DESC
+        `, [req.params.id]);
+        res.json(requests);
+    } catch (err) {
+        console.error('Get requests error:', err);
+        res.status(500).json({ error: 'Failed to get requests' });
+    }
+});
+
+app.post('/api/spaces/:id/requests/:requestId/approve', async (req, res) => {
+    try {
+        const { requestId, id: spaceId } = req.params;
+
+        const request = await query.get('SELECT * FROM join_requests WHERE id = ?', [requestId]);
+        if (!request) return res.status(404).json({ error: 'Request not found' });
+
+        // Add member
+        await query.run(
+            'INSERT INTO space_members (id, spaceId, userId, role, joinedAt) VALUES (?, ?, ?, ?, ?)',
+            [uuidv4(), spaceId, request.userId, 'Member', new Date().toISOString()]
+        );
+
+        // Delete request
+        await query.run('DELETE FROM join_requests WHERE id = ?', [requestId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Approve request error:', err);
+        res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+app.post('/api/spaces/:id/requests/:requestId/reject', async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        await query.run('DELETE FROM join_requests WHERE id = ?', [requestId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Reject request error:', err);
+        res.status(500).json({ error: 'Failed to reject request' });
+    }
+});
+
 app.get('/api/spaces/:id', async (req, res) => {
     try {
         const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
         if (!space) return res.status(404).json({ error: 'Space not found' });
-        res.json({ ...space, thumbnail: space.thumbnailGradient || space.thumbnailImage });
+
+        const requestsCount = await query.get('SELECT COUNT(*) as count FROM join_requests WHERE spaceId = ?', [req.params.id]);
+
+        res.json({
+            ...space,
+            thumbnail: space.thumbnailGradient || space.thumbnailImage,
+            requestsCount: requestsCount?.count || 0
+        });
     } catch (err) {
         console.error('Get space error:', err);
         res.status(500).json({ error: 'Failed to get space' });
@@ -866,10 +1016,17 @@ app.put('/api/spaces/:id', async (req, res) => {
         const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
         if (!space) return res.status(404).json({ error: 'Space not found' });
 
-        const { name, description, category, thumbnail } = req.body;
+        const { name, description, category, thumbnail, visibility } = req.body;
         await query.run(
-            'UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ? WHERE id = ?',
-            [name || space.name, description !== undefined ? description : space.description, category || space.category, thumbnail || space.thumbnailGradient, req.params.id]
+            'UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ?, visibility = ? WHERE id = ?',
+            [
+                name || space.name,
+                description !== undefined ? description : space.description,
+                category || space.category,
+                thumbnail || space.thumbnailGradient,
+                visibility || space.visibility || 'public',
+                req.params.id
+            ]
         );
 
         const updated = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
@@ -976,6 +1133,10 @@ app.put('/api/spaces/:spaceId/members/:memberId', async (req, res) => {
 
 app.delete('/api/spaces/:spaceId/members/:memberId', async (req, res) => {
     try {
+        const member = await query.get('SELECT * FROM space_members WHERE id = ?', [req.params.memberId]);
+        if (!member) return res.status(404).json({ error: 'Member not found' });
+        if (member.role === 'Owner') return res.status(403).json({ error: 'Cannot remove the owner. Transfer ownership first.' });
+
         await query.run('DELETE FROM space_members WHERE id = ?', [req.params.memberId]);
         res.json({ success: true });
     } catch (err) {
@@ -992,6 +1153,39 @@ app.post('/api/spaces/:spaceId/leave', async (req, res) => {
     } catch (err) {
         console.error('Leave space error:', err);
         res.status(500).json({ error: 'Failed to leave space' });
+    }
+}
+);
+
+// Transfer ownership
+app.post('/api/spaces/:id/transfer-ownership', async (req, res) => {
+    try {
+        const { newOwnerId, currentOwnerId } = req.body;
+        const spaceId = req.params.id;
+
+        const space = await query.get('SELECT * FROM spaces WHERE id = ?', [spaceId]);
+        if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        if (space.ownerId !== currentOwnerId) {
+            return res.status(403).json({ error: 'Only the owner can transfer ownership' });
+        }
+
+        const newOwnerMember = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [spaceId, newOwnerId]);
+        if (!newOwnerMember) return res.status(400).json({ error: 'New owner must be a member of the space' });
+
+        // Update space owner
+        await query.run('UPDATE spaces SET ownerId = ? WHERE id = ?', [newOwnerId, spaceId]);
+
+        // Update roles
+        // Old owner -> Admin
+        await query.run('UPDATE space_members SET role = ? WHERE spaceId = ? AND userId = ?', ['Admin', spaceId, currentOwnerId]);
+        // New owner -> Owner
+        await query.run('UPDATE space_members SET role = ? WHERE spaceId = ? AND userId = ?', ['Owner', spaceId, newOwnerId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Transfer ownership error:', err);
+        res.status(500).json({ error: 'Failed to transfer ownership' });
     }
 });
 
