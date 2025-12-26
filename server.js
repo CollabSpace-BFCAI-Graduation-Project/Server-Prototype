@@ -4,7 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { put, del } = require('@vercel/blob');
+const { put, del, copy } = require('@vercel/blob');
 const { query, initDatabase } = require('./db');
 
 const app = express();
@@ -2137,7 +2137,7 @@ app.get('/api/files/:spaceId', async (req, res) => {
     }
 });
 
-// Copy file(s) to a different folder (duplicates records, same blob)
+// Copy file(s) to a different folder (Deep Copy - new blob)
 // MUST be before /api/files/:spaceId to avoid :spaceId matching "copy"
 app.post('/api/files/copy', async (req, res) => {
     try {
@@ -2154,10 +2154,36 @@ app.post('/api/files/copy', async (req, res) => {
             const newId = uuidv4();
             const createdAt = new Date().toISOString();
 
-            // Create duplicate record pointing to same blob
+            // Create a Deep Copy of the blob if it has a URL
+            // If downloadUrl is relative or missing (e.g. text file placeholder), we can't deep copy easily
+            // But assuming Vercel Blob:
+            let newDownloadUrl = original.downloadUrl;
+            let newStoredFilename = original.storedFilename;
+
+            // Only attempt blob copy if it looks like a remote URL (Vercel Blob)
+            if (original.downloadUrl && original.downloadUrl.startsWith('http')) {
+                try {
+                    const newBlobPath = `files/${newId}_${original.name}`;
+                    const copyResult = await copy(original.downloadUrl, newBlobPath, {
+                        access: 'public',
+                        token: process.env.BLOB_READ_WRITE_TOKEN
+                    });
+                    newDownloadUrl = copyResult.url;
+                    newStoredFilename = newBlobPath;
+                } catch (blobErr) {
+                    console.error(`Failed to copy blob for file ${fileId}:`, blobErr);
+                    // Fallback? Or fail? 
+                    // If blob copy fails, we probably shouldn't create the file record to avoid "ghost" files
+                    // But maybe we continue with shared blob as fallback?
+                    // User explicitly requested NEW BLOB. So failing is better than lying.
+                    continue; // Skip this file
+                }
+            }
+
+            // Create new record pointing to NEW blob
             await query.run(
                 'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, folderId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [newId, original.spaceId, original.name, original.storedFilename, original.type, original.mimeType, original.size, userId, original.downloadUrl, folderId || null, createdAt]
+                [newId, original.spaceId, original.name, newStoredFilename, original.type, original.mimeType, original.size, userId, newDownloadUrl, folderId || null, createdAt]
             );
 
             copiedFiles.push(newId);
