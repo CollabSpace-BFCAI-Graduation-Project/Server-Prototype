@@ -1990,10 +1990,19 @@ app.post('/api/messages/:messageId/forward', async (req, res) => {
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
-        await query.run(
-            'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, forwardedFromChannel, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, spaceId, targetChannelId, senderId, original.text, 'user', original.channelName || 'another channel', createdAt]
-        );
+        try {
+            await query.run(
+                'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, forwardedFromChannel, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [id, spaceId, targetChannelId, senderId, original.text, 'user', original.channelName || 'another channel', createdAt]
+            );
+        } catch (dbErr) {
+            console.warn('Column forwardedFromChannel might be missing, retrying without it:', dbErr.message);
+            // Fallback: Insert without forwardedFromChannel column
+            await query.run(
+                'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [id, spaceId, targetChannelId, senderId, original.text, 'user', createdAt]
+            );
+        }
 
         const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
         res.status(201).json({
