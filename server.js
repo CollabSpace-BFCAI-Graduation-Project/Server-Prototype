@@ -1878,13 +1878,18 @@ app.delete('/api/channels/:channelId', async (req, res) => {
 });
 
 // ============ MESSAGES ROUTES ============
-// Get messages for a channel (or legacy: by spaceId if no channelId)
+// Get messages for a channel
 app.get('/api/messages/:channelId', async (req, res) => {
     try {
         const messages = await query.all(`
-            SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage
+            SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage,
+                   r.text as replyText, r.senderId as replySenderId,
+                   r.deletedAt as replyDeletedAt,
+                   ru.name as replySenderName
             FROM messages m
             LEFT JOIN users u ON m.senderId = u.id
+            LEFT JOIN messages r ON m.replyToId = r.id
+            LEFT JOIN users ru ON r.senderId = ru.id
             WHERE m.channelId = ?
             ORDER BY m.createdAt ASC
         `, [req.params.channelId]);
@@ -1902,6 +1907,15 @@ app.get('/api/messages/:channelId', async (req, res) => {
             createdAt: m.createdAt,
             avatarColor: m.avatarColor || '#9ca3af',
             avatarImage: m.avatarImage,
+            // Reply info
+            replyToId: m.replyToId || null,
+            replyTo: m.replyToId ? {
+                text: m.replyDeletedAt ? null : m.replyText,
+                sender: m.replySenderName || 'Unknown',
+                deletedAt: m.replyDeletedAt || null
+            } : null,
+            // Forward info
+            forwardedFromChannel: m.forwardedFromChannel || null,
             // Soft delete fields
             deletedAt: m.deletedAt || null,
             deletedBy: m.deletedBy || null,
@@ -1917,14 +1931,24 @@ app.get('/api/messages/:channelId', async (req, res) => {
 
 app.post('/api/messages/:channelId', async (req, res) => {
     try {
-        const { senderId, text, type, mentions, spaceId } = req.body;
+        const { senderId, text, type, mentions, spaceId, replyToId } = req.body;
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
         await query.run(
-            'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, mentions, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, createdAt]
+            'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, mentions, replyToId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, replyToId || null, createdAt]
         );
+
+        // Fetch reply info if replying
+        let replyTo = null;
+        if (replyToId) {
+            const replyMsg = await query.get(`
+                SELECT m.text, u.name as senderName FROM messages m
+                LEFT JOIN users u ON m.senderId = u.id WHERE m.id = ?
+            `, [replyToId]);
+            if (replyMsg) replyTo = { text: replyMsg.text, sender: replyMsg.senderName };
+        }
 
         const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
         res.status(201).json({
@@ -1939,11 +1963,56 @@ app.post('/api/messages/:channelId', async (req, res) => {
             time: new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             createdAt,
             avatarColor: sender?.avatarColor || '#ec4899',
-            avatarImage: sender?.avatarImage
+            avatarImage: sender?.avatarImage,
+            replyToId: replyToId || null,
+            replyTo
         });
     } catch (err) {
         console.error('Send message error:', err);
         res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Forward a message to another channel
+app.post('/api/messages/:messageId/forward', async (req, res) => {
+    try {
+        const { targetChannelId, senderId, spaceId } = req.body;
+
+        // Get original message
+        const original = await query.get(`
+            SELECT m.*, c.name as channelName FROM messages m
+            LEFT JOIN channels c ON m.channelId = c.id
+            WHERE m.id = ?
+        `, [req.params.messageId]);
+
+        if (!original) return res.status(404).json({ error: 'Message not found' });
+
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        await query.run(
+            'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, forwardedFromChannel, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, spaceId, targetChannelId, senderId, original.text, 'user', original.channelName || 'another channel', createdAt]
+        );
+
+        const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
+        res.status(201).json({
+            id,
+            spaceId,
+            channelId: targetChannelId,
+            senderId,
+            sender: sender?.name || 'User',
+            text: original.text,
+            type: 'user',
+            time: new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            createdAt,
+            avatarColor: sender?.avatarColor || '#ec4899',
+            avatarImage: sender?.avatarImage,
+            forwardedFromChannel: original.channelName || 'another channel'
+        });
+    } catch (err) {
+        console.error('Forward message error:', err);
+        res.status(500).json({ error: 'Failed to forward message' });
     }
 });
 
