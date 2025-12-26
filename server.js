@@ -1662,7 +1662,11 @@ app.get('/api/messages/:spaceId', async (req, res) => {
             time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             createdAt: m.createdAt,
             avatarColor: m.avatarColor || '#9ca3af',
-            avatarImage: m.avatarImage
+            avatarImage: m.avatarImage,
+            // Soft delete fields
+            deletedAt: m.deletedAt || null,
+            deletedBy: m.deletedBy || null,
+            deletedByRole: m.deletedByRole || null
         }));
 
         res.json(transformed);
@@ -1700,6 +1704,99 @@ app.post('/api/messages/:spaceId', async (req, res) => {
     } catch (err) {
         console.error('Send message error:', err);
         res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+app.put('/api/messages/:id', async (req, res) => {
+    try {
+        const { text, senderId } = req.body;
+        const message = await query.get('SELECT * FROM messages WHERE id = ?', [req.params.id]);
+
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        // Check ownership
+        if (message.senderId !== senderId) {
+            return res.status(403).json({ error: 'You can only edit your own messages' });
+        }
+
+        // Check time limit (15 minutes)
+        const age = Date.now() - new Date(message.createdAt).getTime();
+        if (age > 15 * 60 * 1000) {
+            return res.status(403).json({ error: 'Message cannot be edited after 15 minutes' });
+        }
+
+        await query.run('UPDATE messages SET text = ? WHERE id = ?', [text, req.params.id]);
+
+        // Return updated message
+        const updated = await query.get('SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage FROM messages m left join users u on m.senderId = u.id WHERE m.id = ?', [req.params.id]);
+
+        res.json({
+            id: updated.id,
+            spaceId: updated.spaceId,
+            senderId: updated.senderId,
+            sender: updated.type === 'system' ? 'System' : (updated.senderName || 'Unknown User'),
+            text: updated.text,
+            type: updated.type,
+            mentions: updated.mentions ? JSON.parse(updated.mentions) : [],
+            time: new Date(updated.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            createdAt: updated.createdAt,
+            avatarColor: updated.avatarColor || '#9ca3af',
+            avatarImage: updated.avatarImage
+        });
+    } catch (err) {
+        console.error('Update message error:', err);
+        res.status(500).json({ error: 'Failed to update message' });
+    }
+});
+
+app.delete('/api/messages/:id', async (req, res) => {
+    try {
+        const { senderId } = req.body; // Requester ID
+        const message = await query.get('SELECT * FROM messages WHERE id = ?', [req.params.id]);
+
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+        if (message.deletedAt) return res.status(400).json({ error: 'Message already deleted' });
+
+        // Check permissions
+        const space = await query.get('SELECT ownerId FROM spaces WHERE id = ?', [message.spaceId]);
+        const membership = await query.get('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?', [message.spaceId, senderId]);
+
+        const isAuthor = message.senderId === senderId;
+        const isAdmin = membership?.role === 'Admin' || membership?.role === 'Owner';
+        const isOwner = space?.ownerId === senderId;
+
+        const deletedAt = new Date().toISOString();
+        let deletedByRole = null;
+
+        // Condition 1: Author can delete OWN message within 15 minutes (or anytime if admin/owner)
+        if (isAuthor) {
+            const age = Date.now() - new Date(message.createdAt).getTime();
+            // Authors who are NOT admin/owner must be within 15 min
+            if (age > 15 * 60 * 1000 && !isAdmin && !isOwner) {
+                return res.status(403).json({ error: 'Message cannot be deleted after 15 minutes' });
+            }
+            deletedByRole = 'author';
+            await query.run(
+                'UPDATE messages SET deletedAt = ?, deletedBy = ?, deletedByRole = ? WHERE id = ?',
+                [deletedAt, senderId, deletedByRole, req.params.id]
+            );
+            return res.json({ success: true, deletedByRole });
+        }
+
+        // Condition 2: Admin/Owner can delete OTHER people's messages (no time limit)
+        if (isAdmin || isOwner) {
+            deletedByRole = isOwner ? 'Owner' : 'Admin';
+            await query.run(
+                'UPDATE messages SET deletedAt = ?, deletedBy = ?, deletedByRole = ? WHERE id = ?',
+                [deletedAt, senderId, deletedByRole, req.params.id]
+            );
+            return res.json({ success: true, deletedByRole });
+        }
+
+        return res.status(403).json({ error: 'Permission denied' });
+    } catch (err) {
+        console.error('Delete message error:', err);
+        res.status(500).json({ error: 'Failed to delete message' });
     }
 });
 
