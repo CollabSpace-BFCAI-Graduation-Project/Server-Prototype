@@ -1807,20 +1807,86 @@ app.put('/api/notifications/read-all', async (req, res) => {
     }
 });
 
+// ============ CHANNELS ROUTES ============
+// Get channels for a space
+app.get('/api/channels/:spaceId', async (req, res) => {
+    try {
+        const channels = await query.all(`
+            SELECT c.*, u.name as creatorName
+            FROM channels c
+            LEFT JOIN users u ON c.createdBy = u.id
+            WHERE c.spaceId = ?
+            ORDER BY c.createdAt ASC
+        `, [req.params.spaceId]);
+        res.json(channels);
+    } catch (err) {
+        console.error('Get channels error:', err);
+        res.status(500).json({ error: 'Failed to get channels' });
+    }
+});
+
+// Create a channel (admin/owner only - validated on frontend)
+app.post('/api/channels/:spaceId', async (req, res) => {
+    try {
+        const { name, description, createdBy } = req.body;
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        await query.run(
+            'INSERT INTO channels (id, spaceId, name, description, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, name, description || null, createdBy, createdAt]
+        );
+
+        res.status(201).json({ id, spaceId: req.params.spaceId, name, description, createdBy, createdAt });
+    } catch (err) {
+        console.error('Create channel error:', err);
+        res.status(500).json({ error: 'Failed to create channel' });
+    }
+});
+
+// Update a channel
+app.put('/api/channels/:channelId', async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        await query.run(
+            'UPDATE channels SET name = ?, description = ? WHERE id = ?',
+            [name, description || null, req.params.channelId]
+        );
+        const updated = await query.get('SELECT * FROM channels WHERE id = ?', [req.params.channelId]);
+        res.json(updated);
+    } catch (err) {
+        console.error('Update channel error:', err);
+        res.status(500).json({ error: 'Failed to update channel' });
+    }
+});
+
+// Delete a channel
+app.delete('/api/channels/:channelId', async (req, res) => {
+    try {
+        await query.run('DELETE FROM channels WHERE id = ?', [req.params.channelId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete channel error:', err);
+        res.status(500).json({ error: 'Failed to delete channel' });
+    }
+});
+
 // ============ MESSAGES ROUTES ============
-app.get('/api/messages/:spaceId', async (req, res) => {
+// Get messages for a channel (or legacy: by spaceId if no channelId)
+app.get('/api/messages/:channelId', async (req, res) => {
     try {
         const messages = await query.all(`
             SELECT m.*, u.name as senderName, u.avatarColor, u.avatarImage
             FROM messages m
             LEFT JOIN users u ON m.senderId = u.id
-            WHERE m.spaceId = ?
+            WHERE m.channelId = ?
             ORDER BY m.createdAt ASC
-        `, [req.params.spaceId]);
+        `, [req.params.channelId]);
 
         const transformed = messages.map(m => ({
             id: m.id,
             spaceId: m.spaceId,
+            channelId: m.channelId,
             senderId: m.senderId,
             sender: m.type === 'system' ? 'System' : (m.senderName || 'Unknown User'),
             text: m.text,
@@ -1843,21 +1909,22 @@ app.get('/api/messages/:spaceId', async (req, res) => {
     }
 });
 
-app.post('/api/messages/:spaceId', async (req, res) => {
+app.post('/api/messages/:channelId', async (req, res) => {
     try {
-        const { senderId, text, type, mentions } = req.body;
+        const { senderId, text, type, mentions, spaceId } = req.body;
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
         await query.run(
-            'INSERT INTO messages (id, spaceId, senderId, text, type, mentions, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, req.params.spaceId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, createdAt]
+            'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, mentions, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, createdAt]
         );
 
         const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
         res.status(201).json({
             id,
-            spaceId: req.params.spaceId,
+            spaceId,
+            channelId: req.params.channelId,
             senderId,
             sender: sender?.name || 'User',
             text,
