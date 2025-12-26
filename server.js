@@ -848,6 +848,12 @@ app.post('/api/spaces', async (req, res) => {
             [uuidv4(), newSpace.id, newSpace.ownerId, 'Owner', newSpace.createdAt]
         );
 
+        // Auto-create "general" channel for the new space
+        await query.run(
+            'INSERT INTO channels (id, spaceId, name, description, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [uuidv4(), newSpace.id, 'general', 'General discussion', newSpace.ownerId, newSpace.createdAt]
+        );
+
         res.status(201).json({ ...newSpace, thumbnail: newSpace.thumbnailGradient });
     } catch (err) {
         console.error('Create space error:', err);
