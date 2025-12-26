@@ -2268,6 +2268,35 @@ app.put('/api/files/move', async (req, res) => {
     }
 });
 
+// Rename file
+app.put('/api/files/:fileId', async (req, res) => {
+    try {
+        const { name, userId } = req.body;
+        if (!name || !userId) return res.status(400).json({ error: 'Name and User ID required' });
+
+        const file = await query.get('SELECT * FROM files WHERE id = ?', [req.params.fileId]);
+        if (!file) return res.status(404).json({ error: 'File not found' });
+
+        // Permission check
+        const space = await query.get('SELECT ownerId FROM spaces WHERE id = ?', [file.spaceId]);
+        const membership = await query.get('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?', [file.spaceId, userId]);
+
+        const isUploader = file.uploadedBy === userId;
+        const isOwner = space?.ownerId === userId;
+        const isAdmin = membership?.role === 'Admin' || membership?.role === 'Owner';
+
+        if (!isUploader && !isOwner && !isAdmin) {
+            return res.status(403).json({ error: 'Permission denied' });
+        }
+
+        await query.run('UPDATE files SET name = ? WHERE id = ?', [name.trim(), req.params.fileId]);
+        res.json({ success: true, name: name.trim() });
+    } catch (err) {
+        console.error('File rename error:', err);
+        res.status(500).json({ error: 'Failed to rename file' });
+    }
+});
+
 app.delete('/api/files/:fileId', async (req, res) => {
     try {
         const { userId } = req.body;
