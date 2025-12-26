@@ -1460,6 +1460,164 @@ app.get('/api/users/:userId/invites', async (req, res) => {
     }
 });
 
+// ============ INVITE LINKS ROUTES (Discord-Style) ============
+
+// Get invite links for a space
+app.get('/api/spaces/:id/invite-links', async (req, res) => {
+    try {
+        const links = await query.all(`
+            SELECT il.*, u.username as creator
+            FROM invite_links il
+            JOIN users u ON il.creatorId = u.id
+            WHERE il.spaceId = ?
+            ORDER BY il.createdAt DESC
+        `, [req.params.id]);
+
+        res.json(links);
+    } catch (err) {
+        console.error('Get invite links error:', err);
+        res.status(500).json({ error: 'Failed to fetch invite links' });
+    }
+});
+
+// Create new invite link
+app.post('/api/spaces/:id/invite-links', async (req, res) => {
+    try {
+        const { creatorId, expiresAfter, maxUses } = req.body;
+
+        // Generate short code
+        let code;
+        let isUnique = false;
+        while (!isUnique) {
+            // Generate 6-char alphanumeric code
+            code = Math.random().toString(36).substring(2, 8);
+            const existing = await query.get('SELECT id FROM invite_links WHERE code = ?', [code]);
+            if (!existing) isUnique = true;
+        }
+
+        // Calculate expiration
+        let expiresAt = null;
+        if (expiresAfter) {
+            const date = new Date();
+            if (expiresAfter === '30m') date.setMinutes(date.getMinutes() + 30);
+            else if (expiresAfter === '1h') date.setHours(date.getHours() + 1);
+            else if (expiresAfter === '6h') date.setHours(date.getHours() + 6);
+            else if (expiresAfter === '12h') date.setHours(date.getHours() + 12);
+            else if (expiresAfter === '1d') date.setDate(date.getDate() + 1);
+            else if (expiresAfter === '7d') date.setDate(date.getDate() + 7);
+            expiresAt = date.toISOString();
+        }
+
+        const id = uuidv4();
+        await query.run(
+            'INSERT INTO invite_links (id, code, spaceId, creatorId, expiresAt, maxUses, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, code, req.params.id, creatorId, expiresAt, maxUses || null, new Date().toISOString()]
+        );
+
+        const newLink = await query.get(`
+            SELECT il.*, u.username as creator
+            FROM invite_links il
+            JOIN users u ON il.creatorId = u.id
+            WHERE il.id = ?
+        `, [id]);
+
+        res.json(newLink);
+    } catch (err) {
+        console.error('Create invite link error:', err);
+        res.status(500).json({ error: 'Failed to create invite link' });
+    }
+});
+
+// Revoke invite link
+app.delete('/api/invite-links/:id', async (req, res) => {
+    try {
+        await query.run('DELETE FROM invite_links WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Revoke invite link error:', err);
+        res.status(500).json({ error: 'Failed to revoke invite link' });
+    }
+});
+
+// Get invite info (for join preview)
+app.get('/api/invite/:code', async (req, res) => {
+    try {
+        const invite = await query.get('SELECT * FROM invite_links WHERE code = ?', [req.params.code]);
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+
+        // Check expiration
+        if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+            return res.status(410).json({ error: 'Invite expired' });
+        }
+
+        // Check max uses
+        if (invite.maxUses && invite.uses >= invite.maxUses) {
+            return res.status(410).json({ error: 'Invite max uses reached' });
+        }
+
+        const space = await query.get(`
+            SELECT s.id, s.name, s.description, s.thumbnailGradient, s.thumbnailImage, s.category, count(sm.id) as memberCount
+            FROM spaces s
+            LEFT JOIN space_members sm ON s.id = sm.spaceId
+            WHERE s.id = ?
+            GROUP BY s.id
+        `, [invite.spaceId]);
+
+        res.json({
+            invite,
+            space: {
+                ...space,
+                thumbnail: space.thumbnailGradient || space.thumbnailImage
+            }
+        });
+    } catch (err) {
+        console.error('Get invite info error:', err);
+        res.status(500).json({ error: 'Failed to fetch invite info' });
+    }
+});
+
+// Join space via invite code
+app.post('/api/invite/:code/join', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const invite = await query.get('SELECT * FROM invite_links WHERE code = ?', [req.params.code]);
+
+        if (!invite) return res.status(404).json({ error: 'Invite not found' });
+        if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(410).json({ error: 'Invite expired' });
+        if (invite.maxUses && invite.uses >= invite.maxUses) return res.status(410).json({ error: 'Invite max uses reached' });
+
+        // Check if already member
+        const existing = await query.get('SELECT id FROM space_members WHERE spaceId = ? AND userId = ?', [invite.spaceId, userId]);
+        if (existing) return res.status(400).json({ error: 'Already a member', spaceId: invite.spaceId });
+
+        // Add member
+        await query.run(
+            'INSERT INTO space_members (id, spaceId, userId, role, joinedAt) VALUES (?, ?, ?, ?, ?)',
+            [uuidv4(), invite.spaceId, userId, 'Member', new Date().toISOString()]
+        );
+
+        // Increment uses
+        await query.run('UPDATE invite_links SET uses = uses + 1 WHERE id = ?', [invite.id]);
+
+        // Create notification for join
+        const user = await query.get('SELECT name FROM users WHERE id = ?', [userId]);
+        const space = await query.get('SELECT name, ownerId FROM spaces WHERE id = ?', [invite.spaceId]);
+
+        // Notify owner
+        if (space.ownerId !== userId) {
+            await query.run(
+                'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, read, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [uuidv4(), space.ownerId, 'join', userId, 'space', invite.spaceId, `${user.name} joined ${space.name} via invite link`, 0, new Date().toISOString()]
+            );
+        }
+
+        res.json({ success: true, spaceId: invite.spaceId });
+    } catch (err) {
+        console.error('Join via invite error:', err);
+        res.status(500).json({ error: 'Failed to join space' });
+    }
+});
+
 app.post('/api/invites/:inviteId/accept', async (req, res) => {
     try {
         const invite = await query.get('SELECT * FROM space_invites WHERE id = ?', [req.params.inviteId]);
