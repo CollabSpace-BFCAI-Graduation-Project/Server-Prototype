@@ -1800,15 +1800,163 @@ app.delete('/api/messages/:id', async (req, res) => {
     }
 });
 
+// ============ FOLDERS ROUTES ============
+// Get all folders in a space (optionally filtered by parentId)
+app.get('/api/spaces/:spaceId/folders', async (req, res) => {
+    try {
+        const { parentId } = req.query;
+        let folders;
+
+        if (parentId === 'null' || parentId === '') {
+            // Get root folders (no parent)
+            folders = await query.all(`
+                SELECT f.*, u.name as creatorName
+                FROM folders f
+                LEFT JOIN users u ON f.createdBy = u.id
+                WHERE f.spaceId = ? AND f.parentId IS NULL
+                ORDER BY f.name ASC
+            `, [req.params.spaceId]);
+        } else if (parentId) {
+            // Get folders within a specific parent
+            folders = await query.all(`
+                SELECT f.*, u.name as creatorName
+                FROM folders f
+                LEFT JOIN users u ON f.createdBy = u.id
+                WHERE f.spaceId = ? AND f.parentId = ?
+                ORDER BY f.name ASC
+            `, [req.params.spaceId, parentId]);
+        } else {
+            // Get all folders
+            folders = await query.all(`
+                SELECT f.*, u.name as creatorName
+                FROM folders f
+                LEFT JOIN users u ON f.createdBy = u.id
+                WHERE f.spaceId = ?
+                ORDER BY f.name ASC
+            `, [req.params.spaceId]);
+        }
+
+        res.json(folders);
+    } catch (err) {
+        console.error('Get folders error:', err);
+        res.status(500).json({ error: 'Failed to get folders' });
+    }
+});
+
+// Get a single folder with its path (for breadcrumbs)
+app.get('/api/folders/:folderId', async (req, res) => {
+    try {
+        const folder = await query.get(`
+            SELECT f.*, u.name as creatorName
+            FROM folders f
+            LEFT JOIN users u ON f.createdBy = u.id
+            WHERE f.id = ?
+        `, [req.params.folderId]);
+
+        if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+        // Build path by traversing up
+        const path = [folder];
+        let current = folder;
+        while (current.parentId) {
+            const parent = await query.get('SELECT * FROM folders WHERE id = ?', [current.parentId]);
+            if (parent) {
+                path.unshift(parent);
+                current = parent;
+            } else {
+                break;
+            }
+        }
+
+        res.json({ folder, path });
+    } catch (err) {
+        console.error('Get folder error:', err);
+        res.status(500).json({ error: 'Failed to get folder' });
+    }
+});
+
+// Create a folder
+app.post('/api/spaces/:spaceId/folders', async (req, res) => {
+    try {
+        const { name, parentId, createdBy } = req.body;
+        if (!name) return res.status(400).json({ error: 'Folder name required' });
+
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        await query.run(
+            'INSERT INTO folders (id, spaceId, name, parentId, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, name, parentId || null, createdBy, createdAt]
+        );
+
+        res.status(201).json({ id, spaceId: req.params.spaceId, name, parentId: parentId || null, createdBy, createdAt });
+    } catch (err) {
+        console.error('Create folder error:', err);
+        res.status(500).json({ error: 'Failed to create folder' });
+    }
+});
+
+// Rename a folder
+app.put('/api/folders/:folderId', async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Folder name required' });
+
+        await query.run('UPDATE folders SET name = ? WHERE id = ?', [name, req.params.folderId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Update folder error:', err);
+        res.status(500).json({ error: 'Failed to update folder' });
+    }
+});
+
+// Delete a folder (cascades to subfolders, files get folderId set to NULL)
+app.delete('/api/folders/:folderId', async (req, res) => {
+    try {
+        const folder = await query.get('SELECT * FROM folders WHERE id = ?', [req.params.folderId]);
+        if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+        // Delete folder (CASCADE handles subfolders, files get NULL folderId)
+        await query.run('DELETE FROM folders WHERE id = ?', [req.params.folderId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete folder error:', err);
+        res.status(500).json({ error: 'Failed to delete folder' });
+    }
+});
+
 // ============ FILES ROUTES ============
+// Modified to support folder filtering
 app.get('/api/files/:spaceId', async (req, res) => {
     try {
-        const files = await query.all(`
-            SELECT f.*, u.name as uploaderName
-            FROM files f
-            LEFT JOIN users u ON f.uploadedBy = u.id
-            WHERE f.spaceId = ?
-        `, [req.params.spaceId]);
+        const { folderId } = req.query;
+        let files;
+
+        if (folderId === 'null' || folderId === '') {
+            // Get root-level files (no folder)
+            files = await query.all(`
+                SELECT f.*, u.name as uploaderName
+                FROM files f
+                LEFT JOIN users u ON f.uploadedBy = u.id
+                WHERE f.spaceId = ? AND f.folderId IS NULL
+            `, [req.params.spaceId]);
+        } else if (folderId) {
+            // Get files in a specific folder
+            files = await query.all(`
+                SELECT f.*, u.name as uploaderName
+                FROM files f
+                LEFT JOIN users u ON f.uploadedBy = u.id
+                WHERE f.spaceId = ? AND f.folderId = ?
+            `, [req.params.spaceId, folderId]);
+        } else {
+            // Get all files (for backward compatibility)
+            files = await query.all(`
+                SELECT f.*, u.name as uploaderName
+                FROM files f
+                LEFT JOIN users u ON f.uploadedBy = u.id
+                WHERE f.spaceId = ?
+            `, [req.params.spaceId]);
+        }
 
         const enriched = files.map(f => ({
             ...f,
@@ -1822,9 +1970,42 @@ app.get('/api/files/:spaceId', async (req, res) => {
     }
 });
 
+// Copy file(s) to a different folder (duplicates records, same blob)
+// MUST be before /api/files/:spaceId to avoid :spaceId matching "copy"
+app.post('/api/files/copy', async (req, res) => {
+    try {
+        const { fileIds, folderId, userId } = req.body;
+        if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ error: 'File IDs array required' });
+        }
+
+        const copiedFiles = [];
+        for (const fileId of fileIds) {
+            const original = await query.get('SELECT * FROM files WHERE id = ?', [fileId]);
+            if (!original) continue;
+
+            const newId = uuidv4();
+            const createdAt = new Date().toISOString();
+
+            // Create duplicate record pointing to same blob
+            await query.run(
+                'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, folderId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [newId, original.spaceId, original.name, original.storedFilename, original.type, original.mimeType, original.size, userId, original.downloadUrl, folderId || null, createdAt]
+            );
+
+            copiedFiles.push(newId);
+        }
+
+        res.json({ success: true, copied: copiedFiles.length, newIds: copiedFiles });
+    } catch (err) {
+        console.error('Copy files error:', err);
+        res.status(500).json({ error: 'Failed to copy files' });
+    }
+});
+
 app.post('/api/files/:spaceId', async (req, res) => {
     try {
-        const { name, fileData, uploadedBy } = req.body;
+        const { name, fileData, uploadedBy, folderId } = req.body;
         if (!name || !fileData) return res.status(400).json({ error: 'File name and data required' });
 
         const matches = fileData.match(/^data:(.+);base64,(.+)$/);
@@ -1852,11 +2033,11 @@ app.post('/api/files/:spaceId', async (req, res) => {
         const createdAt = new Date().toISOString();
 
         await query.run(
-            'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, req.params.spaceId, name, blobFilename, extension.toUpperCase(), mimeType, size, uploadedBy, blob.url, createdAt]
+            'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, folderId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, name, blobFilename, extension.toUpperCase(), mimeType, size, uploadedBy, blob.url, folderId || null, createdAt]
         );
 
-        res.status(201).json({ id, spaceId: req.params.spaceId, name, storedFilename: blobFilename, type: extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl: blob.url, createdAt });
+        res.status(201).json({ id, spaceId: req.params.spaceId, name, storedFilename: blobFilename, type: extension.toUpperCase(), mimeType, size, uploadedBy, downloadUrl: blob.url, folderId: folderId || null, createdAt });
     } catch (err) {
         console.error('File upload error:', err);
         res.status(500).json({ error: 'Failed to upload file' });
@@ -1897,6 +2078,26 @@ app.get('/api/files/:fileId/download', async (req, res) => {
     } catch (err) {
         console.error('File download error:', err);
         res.status(500).json({ error: 'Failed to download file' });
+    }
+});
+
+// Move file(s) to a different folder
+app.put('/api/files/move', async (req, res) => {
+    try {
+        const { fileIds, folderId, userId } = req.body;
+        if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ error: 'File IDs array required' });
+        }
+
+        // Update all files to new folder
+        for (const fileId of fileIds) {
+            await query.run('UPDATE files SET folderId = ? WHERE id = ?', [folderId || null, fileId]);
+        }
+
+        res.json({ success: true, moved: fileIds.length });
+    } catch (err) {
+        console.error('Move files error:', err);
+        res.status(500).json({ error: 'Failed to move files' });
     }
 });
 
