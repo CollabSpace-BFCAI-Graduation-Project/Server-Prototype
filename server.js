@@ -1093,15 +1093,16 @@ app.put('/api/spaces/:id', async (req, res) => {
         const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
         if (!space) return res.status(404).json({ error: 'Space not found' });
 
-        const { name, description, category, thumbnail, visibility } = req.body;
+        const { name, description, category, thumbnail, visibility, thumbnailPosition } = req.body;
         await query.run(
-            'UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ?, visibility = ? WHERE id = ?',
+            'UPDATE spaces SET name = ?, description = ?, category = ?, thumbnailGradient = ?, visibility = ?, thumbnailPosition = ? WHERE id = ?',
             [
                 name || space.name,
                 description !== undefined ? description : space.description,
                 category || space.category,
                 thumbnail || space.thumbnailGradient,
                 visibility || space.visibility || 'public',
+                thumbnailPosition !== undefined ? thumbnailPosition : (space.thumbnailPosition || '50% 50%'),
                 req.params.id
             ]
         );
