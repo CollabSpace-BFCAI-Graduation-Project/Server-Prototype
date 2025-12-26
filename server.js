@@ -1028,7 +1028,7 @@ app.delete('/api/users/:userId/join-requests/:requestId', async (req, res) => {
     }
 });
 
-// Upload space thumbnail image
+// Upload space thumbnail image (using Vercel Blob)
 app.post('/api/spaces/:id/thumbnail', async (req, res) => {
     try {
         const space = await query.get('SELECT * FROM spaces WHERE id = ?', [req.params.id]);
@@ -1037,26 +1037,33 @@ app.post('/api/spaces/:id/thumbnail', async (req, res) => {
         const { imageData } = req.body; // base64 string
         if (!imageData) return res.status(400).json({ error: 'No image data provided' });
 
+        // Delete old thumbnail from Vercel Blob if exists
+        if (space.thumbnailImage && space.thumbnailImage.includes('blob.vercel-storage.com')) {
+            try { await del(space.thumbnailImage); } catch (e) { /* ignore */ }
+        }
+
         // Parse base64
-        const matches = imageData.match(/^data:(.+);base64,(.+)$/);
+        const matches = imageData.match(/^data:image\/(\w+);base64,(.+)$/);
         if (!matches) return res.status(400).json({ error: 'Invalid image format' });
 
-        const mimeType = matches[1];
+        const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
         const base64Data = matches[2];
-        const ext = mimeType.split('/')[1] || 'png';
-        const filename = `space-${req.params.id}-${Date.now()}.${ext}`;
-        const filepath = path.join(UPLOADS_DIR, filename);
+        const buffer = Buffer.from(base64Data, 'base64');
+        const filename = `thumbnails/space_${req.params.id}_${Date.now()}.${ext}`;
 
-        // Save file
-        fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+        // Upload to Vercel Blob
+        const blob = await put(filename, buffer, {
+            access: 'public',
+            contentType: `image/${ext}`
+        });
 
         // Update database - clear gradient if image is set
         await query.run(
             'UPDATE spaces SET thumbnailImage = ?, thumbnailGradient = NULL WHERE id = ?',
-            [`/uploads/${filename}`, req.params.id]
+            [blob.url, req.params.id]
         );
 
-        res.json({ thumbnailImage: `/uploads/${filename}` });
+        res.json({ thumbnailImage: blob.url });
     } catch (err) {
         console.error('Upload space thumbnail error:', err);
         res.status(500).json({ error: 'Failed to upload thumbnail' });
