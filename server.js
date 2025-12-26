@@ -792,6 +792,7 @@ app.get('/api/spaces', async (req, res) => {
                 FROM files f
                 LEFT JOIN users u ON f.uploadedBy = u.id
                 WHERE f.spaceId = ?
+                ORDER BY f.createdAt DESC
             `, [space.id]);
 
             return {
