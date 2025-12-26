@@ -1940,6 +1940,21 @@ app.post('/api/messages/:channelId', async (req, res) => {
             [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, replyToId || null, createdAt]
         );
 
+        // Populate message_mentions table
+        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+            for (const userId of mentions) {
+                try {
+                    const mentionId = uuidv4();
+                    await query.run(
+                        'INSERT INTO message_mentions (id, messageId, userId, createdAt) VALUES (?, ?, ?, ?)',
+                        [mentionId, id, userId, createdAt]
+                    );
+                } catch (err) {
+                    console.error('Failed to insert mention:', err);
+                }
+            }
+        }
+
         // Fetch reply info if replying
         let replyTo = null;
         if (replyToId) {
