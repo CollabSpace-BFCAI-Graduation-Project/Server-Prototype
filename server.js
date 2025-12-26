@@ -1340,8 +1340,16 @@ app.post('/api/spaces/:spaceId/invite', async (req, res) => {
         const { emails, inviterId, inviterName } = req.body;
         if (!emails || !Array.isArray(emails)) return res.status(400).json({ error: 'Emails required' });
 
-        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        const space = await query.get('SELECT name, visibility, ownerId FROM spaces WHERE id = ?', [req.params.spaceId]);
         if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        // Check permissions for private spaces
+        if (space.visibility === 'private') {
+            const member = await query.get('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?', [req.params.spaceId, inviterId]);
+            if (!member || (member.role !== 'Owner' && member.role !== 'Admin')) {
+                return res.status(403).json({ error: 'Only owners and admins can invite to private spaces' });
+            }
+        }
 
         let invited = 0;
         for (const email of emails) {
@@ -1384,8 +1392,16 @@ app.post('/api/spaces/:spaceId/invite-user', async (req, res) => {
         const { userId, inviterId } = req.body;
         if (!userId) return res.status(400).json({ error: 'userId required' });
 
-        const space = await query.get('SELECT name FROM spaces WHERE id = ?', [req.params.spaceId]);
+        const space = await query.get('SELECT name, visibility, ownerId FROM spaces WHERE id = ?', [req.params.spaceId]);
         if (!space) return res.status(404).json({ error: 'Space not found' });
+
+        // Check permissions for private spaces
+        if (space.visibility === 'private') {
+            const member = await query.get('SELECT role FROM space_members WHERE spaceId = ? AND userId = ?', [req.params.spaceId, inviterId]);
+            if (!member || (member.role !== 'Owner' && member.role !== 'Admin')) {
+                return res.status(403).json({ error: 'Only owners and admins can invite to private spaces' });
+            }
+        }
 
         // Check if user is banned
         const banned = await query.get('SELECT id FROM space_bans WHERE spaceId = ? AND userId = ?', [req.params.spaceId, userId]);
