@@ -1900,32 +1900,50 @@ app.get('/api/messages/:channelId', async (req, res) => {
             ORDER BY m.createdAt ASC
         `, [req.params.channelId]);
 
-        const transformed = messages.map(m => ({
-            id: m.id,
-            spaceId: m.spaceId,
-            channelId: m.channelId,
-            senderId: m.senderId,
-            sender: m.type === 'system' ? 'System' : (m.senderName || 'Unknown User'),
-            text: m.text,
-            type: m.type,
-            mentions: m.mentions ? JSON.parse(m.mentions) : [],
-            time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            createdAt: m.createdAt,
-            avatarColor: m.avatarColor || '#9ca3af',
-            avatarImage: m.avatarImage,
-            // Reply info
-            replyToId: m.replyToId || null,
-            replyTo: m.replyToId ? {
-                text: m.replyDeletedAt ? null : m.replyText,
-                sender: m.replySenderName || 'Unknown',
-                deletedAt: m.replyDeletedAt || null
-            } : null,
-            // Forward info
-            forwardedFromChannel: m.forwardedFromChannel || null,
-            // Soft delete fields
-            deletedAt: m.deletedAt || null,
-            deletedBy: m.deletedBy || null,
-            deletedByRole: m.deletedByRole || null
+        const transformed = await Promise.all(messages.map(async (m) => {
+            // Fetch attachments for this message
+            let attachments = [];
+            try {
+                const attachmentRows = await query.all(`
+                    SELECT f.id, f.name, f.type, f.mimeType, f.size, f.downloadUrl
+                    FROM message_attachments ma
+                    JOIN files f ON ma.fileId = f.id
+                    WHERE ma.messageId = ?
+                `, [m.id]);
+                attachments = attachmentRows || [];
+            } catch (err) {
+                // Table might not exist yet
+            }
+
+            return {
+                id: m.id,
+                spaceId: m.spaceId,
+                channelId: m.channelId,
+                senderId: m.senderId,
+                sender: m.type === 'system' ? 'System' : (m.senderName || 'Unknown User'),
+                text: m.text,
+                type: m.type,
+                mentions: m.mentions ? JSON.parse(m.mentions) : [],
+                time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                createdAt: m.createdAt,
+                avatarColor: m.avatarColor || '#9ca3af',
+                avatarImage: m.avatarImage,
+                // Reply info
+                replyToId: m.replyToId || null,
+                replyTo: m.replyToId ? {
+                    text: m.replyDeletedAt ? null : m.replyText,
+                    sender: m.replySenderName || 'Unknown',
+                    deletedAt: m.replyDeletedAt || null
+                } : null,
+                // Forward info
+                forwardedFromChannel: m.forwardedFromChannel || null,
+                // Soft delete fields
+                deletedAt: m.deletedAt || null,
+                deletedBy: m.deletedBy || null,
+                deletedByRole: m.deletedByRole || null,
+                // Attachments
+                attachments
+            };
         }));
 
         res.json(transformed);
@@ -1937,7 +1955,7 @@ app.get('/api/messages/:channelId', async (req, res) => {
 
 app.post('/api/messages/:channelId', async (req, res) => {
     try {
-        const { senderId, text, type, mentions, spaceId, replyToId, mentionEveryone, mentionRoles } = req.body;
+        const { senderId, text, type, mentions, spaceId, replyToId, mentionEveryone, mentionRoles, attachments } = req.body;
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
@@ -2028,6 +2046,27 @@ app.post('/api/messages/:channelId', async (req, res) => {
             }
         }
 
+        // Handle attachments
+        let attachmentDetails = [];
+        if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+            for (const fileId of attachments) {
+                try {
+                    const attachId = uuidv4();
+                    await query.run(
+                        'INSERT INTO message_attachments (id, messageId, fileId, createdAt) VALUES (?, ?, ?, ?)',
+                        [attachId, id, fileId, createdAt]
+                    );
+                    // Fetch file details
+                    const fileInfo = await query.get('SELECT id, name, type, mimeType, size, downloadUrl FROM files WHERE id = ?', [fileId]);
+                    if (fileInfo) {
+                        attachmentDetails.push(fileInfo);
+                    }
+                } catch (err) {
+                    console.error('Failed to process attachment:', err);
+                }
+            }
+        }
+
         // Fetch reply info if replying
         let replyTo = null;
         if (replyToId) {
@@ -2051,7 +2090,8 @@ app.post('/api/messages/:channelId', async (req, res) => {
             avatarColor: sender?.avatarColor || '#ec4899',
             avatarImage: sender?.avatarImage,
             replyToId: replyToId || null,
-            replyTo
+            replyTo,
+            attachments: attachmentDetails
         });
     } catch (err) {
         console.error('Send message error:', err);
