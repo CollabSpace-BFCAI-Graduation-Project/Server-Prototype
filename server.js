@@ -93,6 +93,12 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'Username must be 3-20 chars, lowercase, numbers, underscores only' });
         }
 
+        // Reserved usernames (for mention system)
+        const reservedUsernames = ['everyone', 'admins', 'admin', 'owner', 'channel', 'here', 'all'];
+        if (reservedUsernames.includes(usernameNormalized)) {
+            return res.status(400).json({ error: 'This username is reserved and cannot be used' });
+        }
+
         // Validate password strength
         const passwordErrors = validatePassword(password);
         if (passwordErrors.length > 0) {
@@ -1931,7 +1937,7 @@ app.get('/api/messages/:channelId', async (req, res) => {
 
 app.post('/api/messages/:channelId', async (req, res) => {
     try {
-        const { senderId, text, type, mentions, spaceId, replyToId } = req.body;
+        const { senderId, text, type, mentions, spaceId, replyToId, mentionEveryone, mentionRoles } = req.body;
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
@@ -1946,7 +1952,9 @@ app.post('/api/messages/:channelId', async (req, res) => {
             [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, replyToId || null, createdAt]
         );
 
-        // Populate message_mentions table and create notifications
+        const notifiedUsers = new Set();
+
+        // Populate message_mentions table and create detailed notifications
         if (mentions && Array.isArray(mentions) && mentions.length > 0) {
             for (const userId of mentions) {
                 try {
@@ -1958,17 +1966,65 @@ app.post('/api/messages/:channelId', async (req, res) => {
                     );
 
                     // Create notification (skip self-mention)
-                    if (userId !== senderId) {
+                    if (userId !== senderId && !notifiedUsers.has(userId)) {
                         const notifId = uuidv4();
                         const notifMessage = `${senderName} mentioned you in #${channelName}`;
                         await query.run(
                             'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                             [notifId, userId, 'mention', senderId, 'message', id, notifMessage, createdAt]
                         );
+                        notifiedUsers.add(userId);
                     }
                 } catch (err) {
                     console.error('Failed to process mention:', err);
                 }
+            }
+        }
+
+        // Handle @everyone
+        if (mentionEveryone) {
+            try {
+                const members = await query.all('SELECT userId FROM space_members WHERE spaceId = ?', [spaceId]);
+                for (const m of members) {
+                    if (m.userId !== senderId && !notifiedUsers.has(m.userId)) {
+                        const notifId = uuidv4();
+                        const notifMessage = `${senderName} mentioned everyone in #${channelName}`;
+                        await query.run(
+                            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                            [notifId, m.userId, 'mention', senderId, 'message', id, notifMessage, createdAt]
+                        );
+                        notifiedUsers.add(m.userId);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to process @everyone:', err);
+            }
+        }
+
+        // Handle role mentions (e.g. @admins)
+        if (mentionRoles && Array.isArray(mentionRoles) && mentionRoles.length > 0) {
+            try {
+                const placeholders = mentionRoles.map(() => '?').join(',');
+                const roleMembers = await query.all(
+                    `SELECT userId FROM space_members WHERE spaceId = ? AND role IN (${placeholders})`,
+                    [spaceId, ...mentionRoles]
+                );
+
+                for (const m of roleMembers) {
+                    if (m.userId !== senderId && !notifiedUsers.has(m.userId)) {
+                        const notifId = uuidv4();
+                        // Assuming first role is representative or just generic "admins"
+                        const rolesStr = mentionRoles.join('/').toLowerCase();
+                        const notifMessage = `${senderName} mentioned ${rolesStr} in #${channelName}`;
+                        await query.run(
+                            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                            [notifId, m.userId, 'mention', senderId, 'message', id, notifMessage, createdAt]
+                        );
+                        notifiedUsers.add(m.userId);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to process role mentions:', err);
             }
         }
 
