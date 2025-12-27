@@ -1935,22 +1935,39 @@ app.post('/api/messages/:channelId', async (req, res) => {
         const id = uuidv4();
         const createdAt = new Date().toISOString();
 
+        // Fetch sender and channel details for notifications and response
+        const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
+        const channel = await query.get('SELECT name FROM channels WHERE id = ?', [req.params.channelId]);
+        const senderName = sender?.name || 'Someone';
+        const channelName = channel?.name || 'chat';
+
         await query.run(
             'INSERT INTO messages (id, spaceId, channelId, senderId, text, type, mentions, replyToId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [id, spaceId, req.params.channelId, senderId, text, type || 'user', mentions ? JSON.stringify(mentions) : null, replyToId || null, createdAt]
         );
 
-        // Populate message_mentions table
+        // Populate message_mentions table and create notifications
         if (mentions && Array.isArray(mentions) && mentions.length > 0) {
             for (const userId of mentions) {
                 try {
+                    // Insert mention record
                     const mentionId = uuidv4();
                     await query.run(
                         'INSERT INTO message_mentions (id, messageId, userId, createdAt) VALUES (?, ?, ?, ?)',
                         [mentionId, id, userId, createdAt]
                     );
+
+                    // Create notification (skip self-mention)
+                    if (userId !== senderId) {
+                        const notifId = uuidv4();
+                        const notifMessage = `${senderName} mentioned you in #${channelName}`;
+                        await query.run(
+                            'INSERT INTO notifications (id, userId, type, actorId, targetType, targetId, message, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                            [notifId, userId, 'mention', senderId, 'message', id, notifMessage, createdAt]
+                        );
+                    }
                 } catch (err) {
-                    console.error('Failed to insert mention:', err);
+                    console.error('Failed to process mention:', err);
                 }
             }
         }
@@ -1964,8 +1981,6 @@ app.post('/api/messages/:channelId', async (req, res) => {
             `, [replyToId]);
             if (replyMsg) replyTo = { text: replyMsg.text, sender: replyMsg.senderName };
         }
-
-        const sender = await query.get('SELECT name, avatarColor, avatarImage FROM users WHERE id = ?', [senderId]);
         res.status(201).json({
             id,
             spaceId,
