@@ -175,17 +175,32 @@ function saveUnlockInstructions(user, unlockTime) {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        let { email, password } = req.body;
+        let { email, username, identifier, password } = req.body;
 
-        // Trim and normalize
-        email = email?.trim() || '';
-        const emailNormalized = normalizeEmail(email);
+        // Support 'identifier' field that can be email or username, or separate email/username fields
+        const loginId = (identifier || email || username)?.trim() || '';
 
-        // First, find user by email only (to check lockout status)
-        const user = await query.get(
-            'SELECT * FROM users WHERE emailNormalized = ? OR email = ?',
-            [emailNormalized, email.toLowerCase()]
-        );
+        if (!loginId) {
+            return res.status(400).json({ error: 'Email or username is required' });
+        }
+
+        // Determine if it's an email or username
+        const isEmail = loginId.includes('@');
+
+        let user;
+        if (isEmail) {
+            const emailNormalized = normalizeEmail(loginId);
+            user = await query.get(
+                'SELECT * FROM users WHERE emailNormalized = ? OR email = ?',
+                [emailNormalized, loginId.toLowerCase()]
+            );
+        } else {
+            const usernameNormalized = normalizeUsername(loginId);
+            user = await query.get(
+                'SELECT * FROM users WHERE usernameNormalized = ? OR username = ?',
+                [usernameNormalized, loginId.toLowerCase()]
+            );
+        }
 
         // If user doesn't exist, return generic error (anti-enumeration)
         if (!user) {
@@ -1130,11 +1145,17 @@ app.put('/api/spaces/:id', async (req, res) => {
 
 app.delete('/api/spaces/:id', async (req, res) => {
     try {
-        // Get files first (before cascade deletes them from DB)
+        // Get space thumbnail and files first (before cascade deletes them from DB)
+        const space = await query.get('SELECT thumbnailImage FROM spaces WHERE id = ?', [req.params.id]);
         const files = await query.all('SELECT downloadUrl FROM files WHERE spaceId = ?', [req.params.id]);
 
         const result = await query.run('DELETE FROM spaces WHERE id = ?', [req.params.id]);
         if (result.changes === 0) return res.status(404).json({ error: 'Space not found' });
+
+        // Delete thumbnail from Vercel Blob
+        if (space?.thumbnailImage && space.thumbnailImage.includes('blob.vercel-storage.com')) {
+            try { await del(space.thumbnailImage); } catch (e) { /* ignore */ }
+        }
 
         // Delete files from Vercel Blob
         for (const f of files) {
@@ -2511,6 +2532,46 @@ app.post('/api/files/:spaceId', async (req, res) => {
     } catch (err) {
         console.error('File upload error:', err);
         res.status(500).json({ error: 'Failed to upload file' });
+    }
+});
+
+// Create a link file (no actual file upload, just store URL)
+app.post('/api/files/:spaceId/link', async (req, res) => {
+    try {
+        const { name, url, uploadedBy, folderId } = req.body;
+        if (!name || !url) return res.status(400).json({ error: 'Name and URL are required' });
+
+        // Validate URL format
+        try {
+            new URL(url);
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        const id = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        await query.run(
+            'INSERT INTO files (id, spaceId, name, storedFilename, type, mimeType, size, uploadedBy, downloadUrl, folderId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, req.params.spaceId, name, null, 'LINK', 'text/uri-list', null, uploadedBy, url, folderId || null, createdAt]
+        );
+
+        res.status(201).json({
+            id,
+            spaceId: req.params.spaceId,
+            name,
+            storedFilename: null,
+            type: 'LINK',
+            mimeType: 'text/uri-list',
+            size: null,
+            uploadedBy,
+            downloadUrl: url,
+            folderId: folderId || null,
+            createdAt
+        });
+    } catch (err) {
+        console.error('Create link error:', err);
+        res.status(500).json({ error: 'Failed to create link' });
     }
 });
 
